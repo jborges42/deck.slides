@@ -330,7 +330,7 @@ test('apagar o evento derruba a tela pareada e remove o vínculo', async () => {
   } finally {
     screen.close()
   }
-  assert.equal(get('SELECT 1 FROM screens WHERE id = ?', id), undefined)
+  assert.equal(await get('SELECT 1 FROM screens WHERE id = ?', id), undefined)
   // O computador volta a pedir código.
   const again = await tv.req('POST', '/api/screen/pair')
   assert.equal(again.data.paired, false)

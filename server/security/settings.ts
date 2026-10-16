@@ -1,6 +1,6 @@
 // Configurações do sistema (shared/admin.ts SystemSettings), guardadas na tabela meta como JSON.
 import { z } from 'zod'
-import { get, run } from '../db.ts'
+import { get, run } from '../sqlite.ts'
 import { DEFAULT_SYSTEM_SETTINGS, type SystemSettings } from '../../shared/admin.ts'
 
 const between = (min: number, max: number, message: string) =>

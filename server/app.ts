@@ -1,4 +1,4 @@
-// Aplicação HTTP (sem abrir porta): usada pelo servidor (index.ts) e pelos testes (app.request).
+// Aplicação HTTP (sem abrir porta): usada pelo servidor (index.ts), pela função da Vercel (vercel.ts) e pelos testes.
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -6,11 +6,13 @@ import { csrf } from 'hono/csrf'
 import { HTTPException } from 'hono/http-exception'
 import { secureHeaders } from 'hono/secure-headers'
 import { fileURLToPath } from 'node:url'
-import { UPLOADS_DIR } from './db.ts'
+import { get, UPLOADS_DIR } from './db.ts'
+import { ROBOTS, securityHeaders } from './headers.ts'
 import { BadRequest, moderator } from './moderator.ts'
 import { pub } from './public.ts'
 
 const production = process.env.NODE_ENV === 'production'
+const blob = !!process.env.BLOB_READ_WRITE_TOKEN
 export const app = new Hono()
 
 // Cabeçalhos de arquivo servido vão depois de next(): o onFound do serveStatic roda com a resposta já criada e se perde.
@@ -28,35 +30,10 @@ app.use('/media/*', cache('public, max-age=31536000, immutable'), async (c, next
   if (c.req.path.endsWith('.mov')) c.header('Content-Type', 'video/quicktime') // fora da tabela de tipos do serveStatic
 })
 
-app.use(
-  '*',
-  secureHeaders({
-    // Em desenvolvimento o Vite injeta scripts inline; a CSP vale para o build de produção.
-    contentSecurityPolicy: production
-      ? {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-          fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
-          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          mediaSrc: ["'self'", 'blob:', 'https:'],
-          frameSrc: ['https:'], // cena "Página web"
-          connectSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          baseUri: ["'self'"],
-          formAction: ["'self'"],
-          frameAncestors: ["'none'"],
-        }
-      : undefined,
-    referrerPolicy: 'same-origin', // tokens de convite não vazam para sites externos (fontes, embeds)
-    crossOriginEmbedderPolicy: false, // imagens e vídeos externos nas cenas
-    permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
-  }),
-  async (c, next) => {
-    await next()
-    c.header('X-Robots-Tag', 'noindex, nofollow') // convites e eventos não devem aparecer em buscadores
-  },
-)
+app.use('*', secureHeaders(securityHeaders(production, blob)), async (c, next) => {
+  await next()
+  c.header('X-Robots-Tag', ROBOTS)
+})
 
 // JSON pequeno em todas as rotas, menos o upload (que grava em disco por streaming com limite próprio).
 const jsonLimit = bodyLimit({
@@ -70,12 +47,23 @@ app.route('/api', pub)
 app.route('/api', moderator)
 app.all('/api/*', (c) => c.json({ error: 'Rota não encontrada.' }, 404))
 
+// Vercel Blob: o arquivo mora em outro domínio (que não lê os cookies daqui). /media/<evento>/<arquivo> continua
+// sendo o endereço gravado nas cenas e no tema, e redireciona para lá.
+if (blob)
+  app.get('/media/:event/:file', async (c, next) => {
+    const m = await get<{ blob_url: string | null }>('SELECT blob_url FROM media WHERE event_id = ? AND file = ?', c.req.param('event'), c.req.param('file'))
+    if (!m?.blob_url) return next()
+    c.header('Cache-Control', 'public, max-age=31536000, immutable')
+    return c.redirect(m.blob_url, 302)
+  })
+
 // Arquivos enviados; cache e CSP ficam no middleware do topo.
 app.use('/media/*', serveStatic({ root: UPLOADS_DIR, rewriteRequestPath: (p) => p.replace(/^\/media/, '') }))
 app.all('/media/*', (c) => c.text('Não encontrado.', 404))
 
 // Em produção o mesmo processo serve o front-end compilado (SPA). Só a pasta dist/ é pública.
-if (production) {
+// Na Vercel, quem serve o front é a CDN (scripts/vercel-build.ts).
+if (production && !process.env.VERCEL) {
   const dist = fileURLToPath(new URL('../dist', import.meta.url))
   app.use('/assets/*', cache('public, max-age=31536000, immutable'), serveStatic({ root: dist }))
   app.get('/assets/*', (c) => c.text('Não encontrado.', 404))

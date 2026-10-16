@@ -1,169 +1,164 @@
-import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
+// Banco, com o mesmo código para três destinos:
+// - DATABASE_URL (postgres://): Postgres, como o Supabase (na Vercel, pelo Transaction pooler, porta 6543);
+// - TURSO_DATABASE_URL: Turso (libSQL por HTTP);
+// - nenhum dos dois: arquivo SQLite em DATA_DIR/deck.db (desenvolvimento, testes e servidor próprio).
+// O SQL é escrito para valer no SQLite e no Postgres; no Postgres, cada `?` vira $1, $2...
+import type { Transaction as LibsqlTransaction } from '@libsql/client'
+import type { TransactionSql } from 'postgres'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdirSync } from 'node:fs'
-import { createHash, randomBytes } from 'node:crypto'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { schema, type Dialect } from './schema.ts'
+
+export { newCode, newId, newPin, normalizeCode, sha256 } from './ids.ts'
 
 export const DATA_DIR = resolve(process.env.DATA_DIR ?? 'data')
 export const UPLOADS_DIR = join(DATA_DIR, 'uploads')
-mkdirSync(UPLOADS_DIR, { recursive: true })
 
-export const db = new DatabaseSync(process.env.DB_PATH ?? join(DATA_DIR, 'deck.db'), { timeout: 5000 })
-
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA synchronous = NORMAL;
-  PRAGMA foreign_keys = ON;
-
-  CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-
-  CREATE TABLE IF NOT EXISTS moderators (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password TEXT NOT NULL,
-    session_epoch INTEGER NOT NULL DEFAULT 0, -- ms; sessões emitidas antes disto são inválidas
-    created_at INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY, -- código curto e legível (newCode), usado nas URLs
-    name TEXT NOT NULL,
-    pin TEXT NOT NULL,
-    settings TEXT NOT NULL,
-    theme TEXT NOT NULL,
-    live TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS participants (
-    id TEXT PRIMARY KEY,
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL DEFAULT '',
-    grp TEXT NOT NULL DEFAULT '',
-    token TEXT NOT NULL UNIQUE,
-    source TEXT NOT NULL DEFAULT 'invite',
-    blocked INTEGER NOT NULL DEFAULT 0,
-    session_epoch INTEGER NOT NULL DEFAULT 0, -- ms; novo link de convite invalida sessões anteriores
-    joined_at INTEGER,
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS participants_event ON participants(event_id);
-
-  -- Telas pareadas por código: o segredo fica num cookie do computador da projeção; aqui, só o hash.
-  CREATE TABLE IF NOT EXISTS screens (
-    id TEXT PRIMARY KEY,
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    secret_hash TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    last_seen INTEGER
-  );
-  CREATE INDEX IF NOT EXISTS screens_event ON screens(event_id);
-
-  CREATE TABLE IF NOT EXISTS scenes (
-    id TEXT PRIMARY KEY,
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    name TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS scenes_event ON scenes(event_id, position);
-
-  CREATE TABLE IF NOT EXISTS questions (
-    id TEXT PRIMARY KEY,
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    participant_id TEXT REFERENCES participants(id) ON DELETE SET NULL,
-    author TEXT NOT NULL,
-    anonymous INTEGER NOT NULL DEFAULT 0,
-    original TEXT NOT NULL,
-    text TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    screen INTEGER,
-    flagged INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS questions_event ON questions(event_id, created_at);
-  CREATE INDEX IF NOT EXISTS questions_participant ON questions(participant_id);
-
-  CREATE TABLE IF NOT EXISTS likes (
-    question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-    participant_id TEXT NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    PRIMARY KEY (question_id, participant_id)
-  );
-  CREATE INDEX IF NOT EXISTS likes_participant ON likes(participant_id);
-
-  CREATE TABLE IF NOT EXISTS reactions (
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    scene_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    count INTEGER NOT NULL,
-    PRIMARY KEY (event_id, scene_id, kind)
-  );
-
-  CREATE TABLE IF NOT EXISTS media (
-    id TEXT PRIMARY KEY,
-    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL,
-    name TEXT NOT NULL,
-    file TEXT NOT NULL,
-    mime TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS media_event ON media(event_id);
-`)
-
-const cache = new Map<string, StatementSync>()
-function stmt(sql: string): StatementSync {
-  let s = cache.get(sql)
-  if (!s) cache.set(sql, (s = db.prepare(sql)))
-  return s
+type Value = string | number | bigint | null
+export interface Statement {
+  sql: string
+  args: Value[]
 }
 
-export const all = <T>(sql: string, ...params: SQLInputValue[]) => stmt(sql).all(...params) as T[]
-export const get = <T>(sql: string, ...params: SQLInputValue[]) => stmt(sql).get(...params) as T | undefined
-export const run = (sql: string, ...params: SQLInputValue[]) => stmt(sql).run(...params)
+interface Driver {
+  exec(sql: string, args: Value[]): Promise<{ rows: unknown[]; changes: number }>
+  batch(stmts: Statement[]): Promise<void>
+  tx<T>(fn: () => Promise<T>): Promise<T>
+}
 
-export function tx<T>(fn: () => T): T {
-  db.exec('BEGIN IMMEDIATE')
-  try {
-    const out = fn()
-    db.exec('COMMIT')
-    return out
-  } catch (e) {
-    db.exec('ROLLBACK')
-    throw e
+const pgUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL // POSTGRES_URL: nome usado pela integração Supabase/Vercel
+const tursoUrl = process.env.TURSO_DATABASE_URL
+export const dialect: Dialect = pgUrl ? 'postgres' : 'sqlite'
+if (!process.env.VERCEL) mkdirSync(UPLOADS_DIR, { recursive: true }) // na Vercel o disco é só leitura (mídia vai para o Blob)
+
+const driver = pgUrl ? await postgresDriver(pgUrl) : await libsqlDriver()
+
+export const all = async <T>(sql: string, ...args: Value[]) => (await driver.exec(sql, args)).rows as T[]
+export const get = async <T>(sql: string, ...args: Value[]) => (await driver.exec(sql, args)).rows[0] as T | undefined
+export const run = async (sql: string, ...args: Value[]) => ({ changes: (await driver.exec(sql, args)).changes })
+
+/** Vários comandos numa ida só ao banco, atômicos. Dentro de tx(), entram na mesma transação. */
+export const batch = (stmts: Statement[]) => (stmts.length ? driver.batch(stmts) : Promise.resolve())
+
+/**
+ * Transação com o isolamento do SQLite (serializável): ler e depois gravar não perde a escrita de outra
+ * requisição. No Postgres, um conflito refaz a função inteira, então ela só deve mexer no banco.
+ * Cada consulta é uma ida ao banco: laços grandes vão em batch().
+ */
+export const tx = <T>(fn: () => Promise<T>) => driver.tx(fn)
+
+/** Valor fixo guardado no banco, criado na primeira leitura. Instâncias simultâneas ficam com o mesmo. */
+export async function metaValue(key: string, create: () => string): Promise<string> {
+  await run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING', key, create())
+  return (await get<{ value: string }>('SELECT value FROM meta WHERE key = ?', key))!.value
+}
+
+// ---------- SQLite e Turso ----------
+
+async function libsqlDriver(): Promise<Driver> {
+  const { createClient } = await import('@libsql/client')
+  const client = tursoUrl
+    ? createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN })
+    : createClient({ url: pathToFileURL(process.env.DB_PATH ?? join(DATA_DIR, 'deck.db')).href, timeout: 5000 })
+
+  // WAL só faz sentido no arquivo local. Dois processos abrindo um arquivo novo juntos: a troca para WAL
+  // não espera o busy timeout, então tenta de novo por até 2 s.
+  for (let i = 0; ; i++) {
+    try {
+      await client.executeMultiple(tursoUrl ? schema('sqlite') : `PRAGMA journal_mode = WAL; ${schema('sqlite')}`)
+      break
+    } catch (e) {
+      if (i >= 40 || !/SQLITE_BUSY/.test(String(e))) throw e
+      await new Promise((r) => setTimeout(r, 50))
+    }
+  }
+  // Bancos criados antes do Vercel Blob não têm a coluna. Duas instâncias subindo juntas podem tentar as duas.
+  if (!(await client.execute('PRAGMA table_info(media)')).rows.some((c) => c.name === 'blob_url'))
+    await client.execute('ALTER TABLE media ADD COLUMN blob_url TEXT').catch((e: Error) => {
+      if (!/duplicate column/i.test(e.message)) throw e
+    })
+
+  // Dentro de tx(), as consultas vão para a transação aberta, sem precisar passá-la de função em função.
+  const current = new AsyncLocalStorage<LibsqlTransaction>()
+  return {
+    async exec(sql, args) {
+      const r = await (current.getStore() ?? client).execute({ sql, args })
+      return { rows: r.rows, changes: r.rowsAffected }
+    },
+    async batch(stmts) {
+      const t = current.getStore()
+      await (t ? t.batch(stmts) : client.batch(stmts, 'write'))
+    },
+    async tx(fn) {
+      if (current.getStore()) return fn()
+      const t = await client.transaction('write') // BEGIN IMMEDIATE: um escritor por vez
+      try {
+        const out = await current.run(t, fn)
+        await t.commit()
+        return out
+      } finally {
+        t.close() // sem commit, desfaz
+      }
+    },
   }
 }
 
-/** Identificador aleatório url-safe. 9 bytes = 12 chars; tokens de convite usam 18. */
-export const newId = (bytes = 9) => randomBytes(bytes).toString('base64url')
+// ---------- Postgres (Supabase) ----------
 
-// Alfabeto Crockford sem I, L, O, U: legível em voz alta e na tela, sem confusão entre 0/O e 1/I.
-const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-
-/** Código curto e legível (ex.: "K7QX2M"). 6 caracteres = ~1 bilhão de combinações. */
-export function newCode(length = 6): string {
-  return Array.from(randomBytes(length), (b) => CODE_ALPHABET[b % 32]).join('')
+/** `?` do SQL comum vira $1, $2... (texto entre aspas simples fica como está). */
+const numbered = (sql: string) => {
+  let i = 0
+  return sql.replace(/'[^']*'|\?/g, (m) => (m === '?' ? `$${++i}` : m))
 }
 
-/** Normaliza um código digitado: maiúsculas, sem espaços/hífens, O->0 e I/L->1 (como o Crockford prevê). */
-export const normalizeCode = (s: string) =>
-  s.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
+async function postgresDriver(url: string): Promise<Driver> {
+  const { default: postgres } = await import('postgres')
+  const { hostname, searchParams } = new URL(url)
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
+  const sql = postgres(url, {
+    prepare: false, // o Transaction pooler do Supabase não guarda comandos preparados entre transações
+    fetch_types: false,
+    max: 5, // cada instância da função abre as suas; o pooler do plano gratuito aceita poucas centenas
+    idle_timeout: 20,
+    connect_timeout: 10,
+    ...(local || searchParams.has('sslmode') ? {} : { ssl: 'require' as const }),
+    // BIGINT (horários em ms, COUNT) volta como número, como no SQLite. Cabe com folga em 2^53.
+    types: { bigint: { to: 20, from: [20], serialize: (x: number) => String(x), parse: (x: string) => Number(x) } },
+    onnotice: () => {}, // "já existe" do CREATE ... IF NOT EXISTS
+  })
+  type Transaction = TransactionSql<{ bigint: number }>
 
-/** PIN numérico de 6 dígitos. */
-export const newPin = () => String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, '0')
+  // Duas instâncias subindo juntas: a trava faz uma esperar a outra terminar de criar as tabelas.
+  await sql.begin(async (t) => {
+    await t.unsafe('SELECT pg_advisory_xact_lock(8217364)')
+    await t.unsafe(schema('postgres')).simple()
+  })
 
-export function metaValue(key: string, create: () => string): string {
-  const row = get<{ value: string }>('SELECT value FROM meta WHERE key = ?', key)
-  if (row) return row.value
-  const value = create()
-  run('INSERT INTO meta (key, value) VALUES (?, ?)', key, value)
-  return value
+  const current = new AsyncLocalStorage<Transaction>()
+  const query = (s: typeof sql | Transaction, text: string, args: Value[]) => s.unsafe(numbered(text), args as never[])
+  return {
+    async exec(text, args) {
+      const r = await query(current.getStore() ?? sql, text, args)
+      return { rows: Array.from(r), changes: r.count } // array comum, não a subclasse Result do driver
+    },
+    async batch(stmts) {
+      // Comandos disparados juntos na mesma conexão seguem em pipeline: uma ida e volta só.
+      const send = (t: Transaction) => Promise.all(stmts.map((s) => query(t, s.sql, s.args)))
+      const t = current.getStore()
+      await (t ? send(t) : sql.begin(send))
+    },
+    async tx(fn) {
+      if (current.getStore()) return fn()
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return (await sql.begin('isolation level serializable', (t) => current.run(t, fn))) as Awaited<ReturnType<typeof fn>>
+        } catch (e) {
+          // 40001: conflito de serialização; 40P01: deadlock. Refaz com o estado novo.
+          if (attempt >= 5 || !['40001', '40P01'].includes((e as { code?: string }).code ?? '')) throw e
+        }
+      }
+    },
+  }
 }
-
-/** Hash para guardar segredos de alta entropia (tokens de tela) sem guardar o segredo em si. */
-export const sha256 = (s: string) => createHash('sha256').update(s).digest('base64url')

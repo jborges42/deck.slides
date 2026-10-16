@@ -1,7 +1,7 @@
 // Segredos em repouso (sementes TOTP) com AES-256-GCM e hashes com "pepper" (códigos de recuperação).
 // As chaves saem do segredo raiz por HKDF-SHA256, uma por finalidade: vazar uma não compromete as outras.
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto'
-import { metaValue } from '../db.ts'
+import { metaValue } from '../sqlite.ts'
 
 // Mesmo segredo raiz de server/auth.ts: SESSION_SECRET ou, sem ele, um valor gerado e guardado no banco.
 // Com SESSION_SECRET no ambiente (obrigatório em produção), um vazamento só do banco não revela as sementes TOTP.

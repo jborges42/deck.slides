@@ -402,8 +402,8 @@ describe('isolamento de dados', () => {
     assert.deepEqual(anaSnap.me, { id: ana.id, name: 'Ana Pereira' })
 
     const me = ((await mod.req('GET', '/api/moderators')).data as { id: string; email: string }[]).find((m) => m.email === MOD_EMAIL)!
-    const password = get<{ password: string }>('SELECT password FROM moderators WHERE email = ?', MOD_EMAIL)!.password
-    const sessionSecret = get<{ value: string }>("SELECT value FROM meta WHERE key = 'session_secret'")!.value
+    const password = (await get<{ password: string }>('SELECT password FROM moderators WHERE email = ?', MOD_EMAIL))!.password
+    const sessionSecret = (await get<{ value: string }>("SELECT value FROM meta WHERE key = 'session_secret'"))!.value
     const everyone = {
       'token da Ana': ana.token,
       'token do Bruno': bruno.token,

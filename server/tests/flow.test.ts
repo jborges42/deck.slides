@@ -7,11 +7,13 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ModeratorSnapshot, ParticipantSnapshot, ScreenSnapshot } from '../../shared/types.ts'
+import { freshPgDatabase } from './pg.ts'
 
 const PORT = 39_000 + Math.floor(Math.random() * 1000)
 const BASE = `http://localhost:${PORT}`
+const pg = await freshPgDatabase()
 const server = spawn(process.execPath, [new URL('../index.ts', import.meta.url).pathname], {
-  env: { ...process.env, DATA_DIR: mkdtempSync(join(tmpdir(), 'deck-test-')), PORT: String(PORT) },
+  env: { ...process.env, DATA_DIR: mkdtempSync(join(tmpdir(), 'deck-test-')), PORT: String(PORT), ...(pg ? { DATABASE_URL: pg } : {}) },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 before(() => new Promise((resolve) => server.stdout!.once('data', resolve)))

@@ -26,7 +26,7 @@ legacy.exec(`
 `)
 legacy.close()
 
-const { all, get, run } = await import('../db.ts')
+const { all, get, run } = await import('../sqlite.ts')
 const { migrateSecurity, toStaffUser } = await import('../security/schema.ts')
 type Row = Parameters<typeof toStaffUser>[0]
 

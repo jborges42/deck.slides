@@ -53,6 +53,9 @@ A tecla `?` mostra todos os atalhos.
 | `pnpm check` | TypeScript do cliente e do servidor |
 | `pnpm lint` | regras do `DESIGN.md` (emoji, "!", palavras proibidas, classes e ícones proibidos) e padrões inseguros (HTML injetado sem justificativa, `eval`, `target="_blank"` sem `noopener`, `console.log` e `process.env` em respostas no servidor) |
 | `pnpm verify` | `check`, `lint` e `test` |
+| `pnpm build:vercel` | gera `.vercel/output` (front estático + função da API), o mesmo build que a Vercel roda |
+| `PG_TEST_URL=postgres://… pnpm test:pg` | testes do servidor contra Postgres, num banco novo por arquivo, imitando o Supabase (papéis `anon`/`authenticated` com acesso automático às tabelas novas) |
+| `BUNDLE=1 PG_TEST_URL=postgres://… node --test --test-force-exit server/tests/instances.test.ts` | depois do `build:vercel`: o pacote da função em duas instâncias sobre o mesmo Postgres, como na Vercel com Supabase (`SQLD=<binário sqld>` no lugar de `PG_TEST_URL` faz o mesmo com libSQL, como o Turso) |
 | `pnpm run audit` | vulnerabilidades conhecidas nas dependências de produção (precisa de rede) |
 | `node scripts/load.ts` | teste de carga do tempo real: centenas de celulares e telas, latência de propagação |
 
@@ -80,14 +83,44 @@ HTTPS, domínio e proxy reverso ficam a cargo da implantação. O proxy não dev
 
 O servidor não sobe com configuração inválida ou insegura e diz o que corrigir, sem imprimir segredos.
 
+## Vercel
+
+A Vercel não tem disco nem processo contínuo: cada requisição pode cair numa instância diferente da função. Por isso, lá:
+
+- o banco é o **Postgres do Supabase** (`DATABASE_URL`) ou o **Turso** (`TURSO_DATABASE_URL`), em vez do arquivo em `DATA_DIR`. O SQL do app vale nos três;
+- os arquivos enviados vão para o **Vercel Blob**, direto do navegador (a função não aceita corpos acima de 4,5 MB);
+- presença, pareamento de telas, limites de tentativas e avisos de tempo real ficam no banco, e cada instância lê os avisos das outras a cada 250 ms;
+- cada conexão SSE dura até 280 s (a função tem 300 s) e o navegador reabre na hora, sem mostrar queda.
+
+`pnpm build:vercel` (o `buildCommand` do `vercel.json`) gera a saída pronta em `.vercel/output`: o front vai para a CDN com os mesmos cabeçalhos de segurança do servidor, e `/api/*` e `/media/*` vão para uma função Node 24 com tudo empacotado.
+
+Para publicar com o Supabase:
+
+1. No Supabase, em **Connect → Direct → Transaction pooler**, copie a conexão (`postgresql://postgres.<projeto>:[YOUR-PASSWORD]@aws-0-<região>.pooler.supabase.com:6543/postgres`) e troque `[YOUR-PASSWORD]` pela senha do banco. Se a senha tiver símbolos (`@`, `:`, `/`, `#`, `%`...), codifique-os para URL (ex.: `@` vira `%40`).
+2. Na Vercel, em **Settings → Environment Variables**, crie `DATABASE_URL` com esse valor, `SESSION_SECRET` (`openssl rand -base64 48`) e `SETUP_TOKEN`.
+3. Em **Storage**, conecte um **Blob** ao projeto (ele cria `BLOB_READ_WRITE_TOKEN`).
+4. Deixe a região das funções (**Settings → Functions**) igual à do banco (Supabase `us-east-1` = Vercel `iad1`): cada comando do console é uma ida e volta até o banco.
+5. Publique de novo (as variáveis só valem em deploys novos) e crie a primeira conta em `/entrar` com o código do `SETUP_TOKEN`.
+
+O app cria as tabelas sozinho na primeira requisição. No Supabase, elas ficam com RLS ligado e sem nenhum privilégio para `anon`/`authenticated`: a Data API (chave pública) não lê nem grava nada, mesmo com "Automatically expose new tables" ligado no painel. O servidor fala direto com o Postgres como dono das tabelas.
+
+| Variável | Uso na Vercel |
+|---|---|
+| `DATABASE_URL` (ou `POSTGRES_URL`) | Postgres do Supabase, pelo Transaction pooler (porta 6543) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | alternativa ao Supabase: banco Turso |
+| `BLOB_READ_WRITE_TOKEN` | arquivos enviados. Sem ele, o envio de mídia falha |
+| `SESSION_SECRET`, `SETUP_TOKEN` | como em produção |
+
+Sem nenhum banco configurado, a função não sobe e o log da Vercel diz o motivo. O IP do cliente vem do cabeçalho da borda da Vercel (que ela não deixa o cliente forjar), sem precisar de `TRUST_PROXY`.
+
 ## Segurança da aplicação (ativa hoje)
 
 - **Contas da equipe.** Senha com hash scrypt e comparação em tempo constante; o login responde igual para e-mail inexistente e senha errada, e paga o mesmo custo de hash. Cookie de sessão assinado (HMAC), `HttpOnly`, `SameSite=Lax`, `Secure` em HTTPS, com validade conferida no servidor; trocar a senha encerra as outras sessões. Em produção, a primeira conta exige `SETUP_TOKEN`, e a criação é atômica.
-- **Tentativas.** Limites por IP no login, no PIN, na consulta de convites, no envio de perguntas, nas reações e no pareamento de telas.
+- **Tentativas.** Limites por IP (contados no banco, valem somados entre instâncias) no login, no PIN, na consulta de convites, no envio de perguntas, nas reações e no pareamento de telas.
 - **Participantes e telas.** Convite com token aleatório de 144 bits, ou nome mais PIN do evento. Gerar um novo link derruba as sessões do convite antigo. Bloquear um participante encerra a conexão na hora. A tela é pareada por um código digitado no console; o servidor guarda só o hash do segredo da tela.
 - **Entrada de dados.** Todo corpo de requisição é validado com zod (mensagens em pt-BR), com limite de 2 MB para JSON. Endereços de mídia e de página web aceitam só arquivos do próprio evento ou `http(s)`.
 - **Navegador.** CSP sem scripts de terceiros (`script-src 'self'`, `frame-ancestors 'none'`), `nosniff`, `Referrer-Policy: same-origin`, Permissions-Policy restritiva e `noindex`. Escritas de outro site são recusadas (CSRF e cookie SameSite).
-- **Arquivos enviados.** Extensão definida pelo tipo validado, nunca pelo nome; nome aleatório; servidos com CSP `sandbox` e `nosniff`; limite de tamanho por streaming. Só o front compilado e os arquivos enviados são públicos; arquivos do projeto e o banco nunca são servidos (também não no `pnpm dev`).
+- **Arquivos enviados.** Extensão definida pelo tipo validado, nunca pelo nome; nome aleatório; servidos com CSP `sandbox` e `nosniff`; limite de tamanho por streaming. Só o front compilado e os arquivos enviados são públicos; arquivos do projeto e o banco nunca são servidos (também não no `pnpm dev`). No Vercel Blob, o token de envio vale só para um caminho, um tipo e um tamanho; o servidor confere tipo e tamanho reais antes de registrar, e os arquivos ficam no domínio do Blob, que não lê os cookies do app.
 - **Erros.** Erro interno nunca expõe detalhes ao cliente; o detalhe vai para o log do servidor.
 
 ## Próxima etapa: administrador geral

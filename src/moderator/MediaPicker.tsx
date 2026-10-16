@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { UploadSimpleIcon } from '@phosphor-icons/react/UploadSimple'
 import { XIcon } from '@phosphor-icons/react/X'
-import { ApiError, upload } from '../lib/api.ts'
+import { ApiError, sendMedia } from '../lib/api.ts'
 import { Button, IconButton, Select, inputClass, notify, cx } from '../ui'
 import type { Media } from '../../shared/types.ts'
 
@@ -16,7 +16,7 @@ const ACCEPT: Record<Media['kind'], string> = {
 /** Envia um arquivo para a biblioteca do evento. Retorna a mídia criada ou null (erro já avisado). */
 export async function uploadMedia(eventId: string, file: File, onProgress?: (f: number) => void): Promise<Media | null> {
   try {
-    return await upload<Media>(`/events/${eventId}/media`, file, onProgress)
+    return await sendMedia<Media>(eventId, file, onProgress)
   } catch (e) {
     notify(e instanceof ApiError ? e.message : 'Falha no envio do arquivo.', { tone: 'critical' })
     return null

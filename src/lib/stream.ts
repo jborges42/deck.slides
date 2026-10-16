@@ -21,7 +21,8 @@ const BACKOFF = [1000, 2000, 5000, 10_000, 30_000]
  * - falha de rede: o EventSource reconecta sozinho;
  * - resposta HTTP de erro: ele desiste, então reabrimos com espera crescente, salvo 401/403/404 (acesso negado);
  * - conexão "muda" (Wi-Fi sem internet não dispara erro): sem mensagem por 35 s, reabrimos;
- * - volta da rede ou da aba para o primeiro plano: reabre na hora se não estiver ao vivo.
+ * - volta da rede ou da aba para o primeiro plano: reabre na hora se não estiver ao vivo;
+ * - aviso `reconnect` (tempo máximo da função na Vercel): reabre na hora, sem passar por "reconectando".
  */
 export function useStream<S extends { serverNow: number }>(url: string | null): Stream<S> {
   const [stream, setStream] = useState<Stream<S>>({ state: null, counts: EMPTY, status: 'connecting', offset: 0 })
@@ -69,6 +70,11 @@ export function useStream<S extends { serverNow: number }>(url: string | null): 
       es.addEventListener('ping', (e) => {
         heard()
         set({ offset: Number(e.data) - Date.now() })
+      })
+      // O servidor renova a conexão antes do tempo máximo da função (Vercel): reabre na hora, sem mostrar queda.
+      es.addEventListener('reconnect', () => {
+        heard()
+        open()
       })
       es.addEventListener('gone', () => {
         stopped = true

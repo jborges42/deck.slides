@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { all, get, newId, run, sha256 } from '../db.ts'
+import { all, get, newId, run, sha256 } from '../sqlite.ts'
 import type { SessionInfo, StaffUser } from '../../shared/admin.ts'
 import { toStaffUser, type StaffRow } from './schema.ts'
 import { getSettings } from './settings.ts'

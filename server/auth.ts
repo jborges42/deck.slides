@@ -3,11 +3,11 @@ import { promisify } from 'node:util'
 import type { Context, MiddlewareHandler } from 'hono'
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
 import { getConnInfo } from '@hono/node-server/conninfo'
-import { get, metaValue, sha256 } from './db.ts'
+import { get, metaValue, run, sha256 } from './db.ts'
 import { eventRow, participantRow, type EventRow, type ParticipantRow } from './model.ts'
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>
-const SECRET = process.env.SESSION_SECRET || metaValue('session_secret', () => randomBytes(32).toString('base64url'))
+const SECRET = process.env.SESSION_SECRET || (await metaValue('session_secret', () => randomBytes(32).toString('base64url')))
 const MONTH_S = 60 * 60 * 24 * 30
 const YEAR_S = MONTH_S * 12
 
@@ -87,7 +87,7 @@ export const screenSecret = async (c: Context) => (await getSignedCookie(c, SECR
 export async function currentModerator(c: Context): Promise<Moderator | null> {
   const s = await readSession(c, MOD_COOKIE, MONTH_S)
   if (!s) return null
-  const m = get<Moderator & { session_epoch: number }>('SELECT id, name, email, session_epoch FROM moderators WHERE id = ?', s.id)
+  const m = await get<Moderator & { session_epoch: number }>('SELECT id, name, email, session_epoch FROM moderators WHERE id = ?', s.id)
   if (!m || s.issued < m.session_epoch) return null
   return { id: m.id, name: m.name, email: m.email }
 }
@@ -100,7 +100,7 @@ export const requireModerator: MiddlewareHandler<Env> = async (c, next) => {
   c.set('moderator', moderator)
   const eventId = c.req.param('id')
   if (eventId) {
-    const event = eventRow(eventId)
+    const event = await eventRow(eventId)
     if (!event) return c.json({ error: 'Evento não encontrado.' }, 404)
     c.set('event', event)
   }
@@ -109,13 +109,13 @@ export const requireModerator: MiddlewareHandler<Env> = async (c, next) => {
 
 export async function participantFromCookie(c: Context, eventId: string): Promise<ParticipantRow | null> {
   const s = await readSession(c, participantCookie(eventId), MONTH_S)
-  const p = s ? participantRow(eventId, s.id) : undefined
+  const p = s ? await participantRow(eventId, s.id) : undefined
   return p && !p.blocked && s!.issued >= p.session_epoch ? p : null
 }
 
 /** Exige participante confirmado (cookie assinado do evento `:id`). */
 export const requireParticipant: MiddlewareHandler<Env> = async (c, next) => {
-  const event = eventRow(c.req.param('id') ?? '')
+  const event = await eventRow(c.req.param('id') ?? '')
   if (!event) return c.json({ error: 'Evento não encontrado.' }, 404)
   const participant = await participantFromCookie(c, event.id)
   if (!participant) return c.json({ error: 'Seu acesso a este evento foi encerrado.' }, 401)
@@ -128,7 +128,7 @@ export const requireParticipant: MiddlewareHandler<Env> = async (c, next) => {
 export async function pairedScreen(c: Context): Promise<ScreenRow | null> {
   const secret = await screenSecret(c)
   if (!secret) return null
-  return get<ScreenRow>('SELECT id, event_id, name FROM screens WHERE secret_hash = ?', sha256(secret)) ?? null
+  return (await get<ScreenRow>('SELECT id, event_id, name FROM screens WHERE secret_hash = ?', sha256(secret))) ?? null
 }
 
 // ---------- conta inicial ----------
@@ -142,32 +142,39 @@ export const setupTokenValid = (token: string | undefined) =>
   !setupTokenRequired() || (!!process.env.SETUP_TOKEN && !!token && safeEqual(token, process.env.SETUP_TOKEN))
 
 // ---------- limite de tentativas ----------
-
-const hits = new Map<string, { n: number; reset: number }>()
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, h] of hits) if (h.reset < now) hits.delete(k)
-}, 60_000).unref()
+// No banco, não na memória: com várias instâncias, cada uma teria a sua contagem e o limite se multiplicaria.
 
 /** Conta uma ocorrência e diz se a chave passou do limite na janela. */
-export function overLimit(key: string, max: number, windowMs: number): boolean {
+export async function overLimit(key: string, max: number, windowMs: number): Promise<boolean> {
   const now = Date.now()
-  let h = hits.get(key)
-  if (!h || h.reset < now) hits.set(key, (h = { n: 0, reset: now + windowMs }))
-  return ++h.n > max
+  // Janela vencida recomeça a contagem; no UPDATE, n e reset à direita são os valores antigos da linha.
+  const row = await get<{ n: number }>(
+    `INSERT INTO hits (key, n, reset) VALUES (?, 1, ?)
+     ON CONFLICT (key) DO UPDATE SET n = CASE WHEN hits.reset < ? THEN 1 ELSE hits.n + 1 END,
+                                     reset = CASE WHEN hits.reset < ? THEN excluded.reset ELSE hits.reset END
+     RETURNING n`,
+    key,
+    now + windowMs,
+    now,
+    now,
+  )
+  return row!.n > max
 }
 
-export const resetLimit = (key: string) => hits.delete(key)
+export const resetLimit = (key: string) => run('DELETE FROM hits WHERE key = ?', key)
 
 /** A chave já atingiu o limite na janela atual? (Só consulta; quem conta é overLimit.) */
-export function isLimited(key: string, max: number): boolean {
-  const h = hits.get(key)
+export async function isLimited(key: string, max: number): Promise<boolean> {
+  const h = await get<{ n: number; reset: number }>('SELECT n, reset FROM hits WHERE key = ?', key)
   return !!h && h.reset >= Date.now() && h.n >= max
 }
 
-/** IP do cliente. Só confia em X-Forwarded-For com TRUST_PROXY=1 (atrás de proxy reverso). */
+/**
+ * IP do cliente. Só confia em X-Forwarded-For atrás de proxy: TRUST_PROXY=1 ou na Vercel, cuja borda
+ * substitui o cabeçalho pelo IP real (o cliente não consegue forjá-lo).
+ */
 export function clientIp(c: Context): string {
-  if (process.env.TRUST_PROXY === '1') {
+  if (process.env.TRUST_PROXY === '1' || process.env.VERCEL) {
     const fwd = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
     if (fwd) return fwd
   }

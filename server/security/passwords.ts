@@ -2,7 +2,7 @@
 // e links de uso único para definir a senha (conta nova ou redefinição pelo administrador).
 import { argon2, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { get, run, sha256 } from '../db.ts'
+import { get, run, sha256 } from '../sqlite.ts'
 import { COMMON_PASSWORDS } from './common-passwords.ts'
 
 const argon2Async = promisify(argon2)

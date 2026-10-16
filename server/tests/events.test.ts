@@ -393,14 +393,14 @@ describe('exclusão', () => {
     assert.equal((await mod.raw('GET', media.url)).status, 200)
 
     const tables = ['scenes', 'questions', 'participants', 'reactions', 'screens', 'media']
-    const count = (table: string) => get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE event_id = ?`, event.id)!.n
-    assert.deepEqual(tables.map(count), [3, 2, 1, 1, 1, 1])
+    const count = async (table: string) => (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE event_id = ?`, event.id))!.n
+    assert.deepEqual(await Promise.all(tables.map(count)), [3, 2, 1, 1, 1, 1])
 
     const del = await mod.req('DELETE', `/api/events/${event.id}`)
     assert.equal(del.status, 200)
     assert.deepEqual(del.data, { ok: true })
-    assert.equal(get('SELECT 1 FROM events WHERE id = ?', event.id), undefined)
-    assert.deepEqual(tables.map(count), [0, 0, 0, 0, 0, 0])
+    assert.equal(await get('SELECT 1 FROM events WHERE id = ?', event.id), undefined)
+    assert.deepEqual(await Promise.all(tables.map(count)), [0, 0, 0, 0, 0, 0])
     assert.equal(existsSync(dir), false)
     assert.equal((await mod.raw('GET', media.url)).status, 404)
     assert.equal(((await mod.req('GET', '/api/events')).data as EventSummary[]).some((e) => e.id === event.id), false)

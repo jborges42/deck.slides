@@ -1,7 +1,7 @@
 // Limite de tentativas por conta (o limite por IP fica em server/auth.ts, overLimit). Vale para a senha e para
 // a segunda etapa: depois de 5 falhas seguidas a conta espera 1, 2, 4, 8 e então 15 minutos a cada nova falha.
 // O bloqueio é temporário de propósito: um atacante consegue, no máximo, atrasar o dono da conta, nunca trancá-la.
-import { get, run } from '../db.ts'
+import { get, run } from '../sqlite.ts'
 
 export const LOCK_AFTER = 5
 const MINUTE = 60_000

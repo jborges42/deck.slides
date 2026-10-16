@@ -305,7 +305,7 @@ test('apagar o evento apaga a pasta de uploads e os registros de mídia', async 
   assert.equal(existsSync(join(UPLOADS_DIR, event.id)), false)
   assert.equal((await fetchMedia(one.url)).status, 404)
   assert.equal((await fetchMedia(two.url)).status, 404)
-  assert.equal(get<{ n: number }>('SELECT COUNT(*) AS n FROM media WHERE event_id = ?', event.id)?.n, 0)
+  assert.equal((await get<{ n: number }>('SELECT COUNT(*) AS n FROM media WHERE event_id = ?', event.id))?.n, 0)
 })
 
 test('caminhos com travessia em /media respondem 404 e nunca entregam o banco ou arquivos fora de uploads', async () => {

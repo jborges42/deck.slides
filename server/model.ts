@@ -60,7 +60,7 @@ interface QuestionRow {
   likes: number
 }
 
-interface MediaRow {
+export interface MediaRow {
   id: string
   event_id: string
   kind: Media['kind']
@@ -69,6 +69,7 @@ interface MediaRow {
   mime: string
   size: number
   created_at: number
+  blob_url: string | null
 }
 
 /** Evento pelo código. Aceita o código digitado em minúsculas. */
@@ -93,12 +94,12 @@ export function toEventInfo(r: EventRow): EventInfo {
 export const toScene = (r: SceneRow) =>
   ({ id: r.id, name: r.name, position: r.position, type: r.type, content: JSON.parse(r.content) }) as Scene
 
-export const scenes = (eventId: string) =>
-  all<SceneRow>('SELECT * FROM scenes WHERE event_id = ? ORDER BY position, created_at', eventId).map(toScene)
+export const scenes = async (eventId: string) =>
+  (await all<SceneRow>('SELECT * FROM scenes WHERE event_id = ? ORDER BY position, created_at', eventId)).map(toScene)
 
-export function scene(eventId: string, id: string | null): Scene | null {
+export async function scene(eventId: string, id: string | null): Promise<Scene | null> {
   if (!id) return null
-  const r = get<SceneRow>('SELECT * FROM scenes WHERE event_id = ? AND id = ?', eventId, id)
+  const r = await get<SceneRow>('SELECT * FROM scenes WHERE event_id = ? AND id = ?', eventId, id)
   return r ? toScene(r) : null
 }
 
@@ -118,21 +119,23 @@ const toQuestion = (r: QuestionRow): Question => ({
   createdAt: r.created_at,
 })
 
-export const questions = (eventId: string) =>
-  all<QuestionRow>(`${QUESTION_SELECT} WHERE q.event_id = ? ORDER BY q.created_at`, eventId).map(toQuestion)
+export const questions = async (eventId: string) =>
+  (await all<QuestionRow>(`${QUESTION_SELECT} WHERE q.event_id = ? ORDER BY q.created_at`, eventId)).map(toQuestion)
 
-export function question(eventId: string, id: string): Question | null {
-  const r = get<QuestionRow>(`${QUESTION_SELECT} WHERE q.event_id = ? AND q.id = ?`, eventId, id)
+export async function question(eventId: string, id: string): Promise<Question | null> {
+  const r = await get<QuestionRow>(`${QUESTION_SELECT} WHERE q.event_id = ? AND q.id = ?`, eventId, id)
   return r ? toQuestion(r) : null
 }
 
 /** Perguntas marcadas para a tela, na ordem de exibição. */
-export const screenQuestions = (eventId: string, limit: number, format: EventSettings['screenName']): PublicQuestion[] =>
-  all<QuestionRow>(
-    `${QUESTION_SELECT} WHERE q.event_id = ? AND q.screen IS NOT NULL AND q.status IN ('approved', 'answered')
-     ORDER BY q.screen LIMIT ?`,
-    eventId,
-    limit,
+export const screenQuestions = async (eventId: string, limit: number, format: EventSettings['screenName']): Promise<PublicQuestion[]> =>
+  (
+    await all<QuestionRow>(
+      `${QUESTION_SELECT} WHERE q.event_id = ? AND q.screen IS NOT NULL AND q.status IN ('approved', 'answered')
+       ORDER BY q.screen LIMIT ?`,
+      eventId,
+      limit,
+    )
   ).map((r) => ({ id: r.id, text: r.text, author: publicAuthor(r.author, !!r.anonymous, format), likes: r.likes }))
 
 export const toParticipant = (r: ParticipantRow, online: Set<string>): Participant => ({
@@ -151,14 +154,12 @@ export const toParticipant = (r: ParticipantRow, online: Set<string>): Participa
 export const participantRow = (eventId: string, id: string) =>
   get<ParticipantRow>('SELECT * FROM participants WHERE event_id = ? AND id = ?', eventId, id)
 
-export const participants = (eventId: string, online: Set<string>) =>
-  all<ParticipantRow>('SELECT * FROM participants WHERE event_id = ? ORDER BY name COLLATE NOCASE', eventId).map(
-    (r) => toParticipant(r, online),
-  )
+export const participants = (eventId: string) =>
+  all<ParticipantRow>('SELECT * FROM participants WHERE event_id = ? ORDER BY lower(name)', eventId)
 
 export const mediaUrl = (r: Pick<MediaRow, 'event_id' | 'file'>) => `/media/${r.event_id}/${r.file}`
 
-export const toMedia = (r: MediaRow): Media => ({
+export const toMedia = (r: Omit<MediaRow, 'blob_url'>): Media => ({
   id: r.id,
   kind: r.kind,
   name: r.name,
@@ -171,21 +172,21 @@ export const toMedia = (r: MediaRow): Media => ({
 export const mediaRow = (eventId: string, id: string) =>
   get<MediaRow>('SELECT * FROM media WHERE event_id = ? AND id = ?', eventId, id)
 
-export const media = (eventId: string) =>
-  all<MediaRow>('SELECT * FROM media WHERE event_id = ? ORDER BY created_at DESC', eventId).map(toMedia)
+export const media = async (eventId: string) =>
+  (await all<MediaRow>('SELECT * FROM media WHERE event_id = ? ORDER BY created_at DESC', eventId)).map(toMedia)
 
 /** Leitura-modificação-escrita atômica do estado ao vivo. */
-export function updateLive(eventId: string, fn: (live: LiveState, ev: EventInfo) => void): EventInfo | null {
-  return tx(() => {
-    const r = eventRow(eventId)
+export function updateLive(eventId: string, fn: (live: LiveState, ev: EventInfo) => void | Promise<void>): Promise<EventInfo | null> {
+  return tx(async () => {
+    const r = await eventRow(eventId)
     if (!r) return null
     const ev = toEventInfo(r)
-    fn(ev.live, ev)
-    run('UPDATE events SET live = ? WHERE id = ?', JSON.stringify(ev.live), eventId)
+    await fn(ev.live, ev)
+    await run('UPDATE events SET live = ? WHERE id = ?', JSON.stringify(ev.live), eventId)
     return ev
   })
 }
 
-export function nextPosition(eventId: string): number {
-  return (get<{ p: number | null }>('SELECT MAX(position) AS p FROM scenes WHERE event_id = ?', eventId)?.p ?? -1) + 1
+export async function nextPosition(eventId: string): Promise<number> {
+  return ((await get<{ p: number | null }>('SELECT MAX(position) AS p FROM scenes WHERE event_id = ?', eventId))?.p ?? -1) + 1
 }

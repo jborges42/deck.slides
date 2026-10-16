@@ -13,5 +13,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": [".", "../shared", "../src/**/*.test.ts", "../e2e"]
+  "include": [".", "../shared", "../src/**/*.test.ts", "../e2e", "../scripts"]
 }

@@ -1,6 +1,6 @@
 // Trilha de auditoria: quem fez o quê, quando e de onde. Nunca guarda segredo, e todo texto vem limpo
 // (sem quebra de linha, controle ou inversão bidi), para que nada injetado finja ser outra entrada.
-import { all, run } from '../db.ts'
+import { all, run } from '../sqlite.ts'
 import type { AuditAction, AuditEntry } from '../../shared/admin.ts'
 
 type Detail = AuditEntry['detail']

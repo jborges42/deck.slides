@@ -1,14 +1,14 @@
 // Dados de demonstração para testar o sistema sem montar tudo à mão.
 // Uso: `pnpm seed` (com ou sem o `pnpm dev` rodando). Cria a conta demo se não houver nenhuma conta.
 import { DEFAULT_SETTINGS, DEFAULT_THEME, defaultLive, type SceneBody } from '../shared/types.ts'
-import { get, newCode, newId, newPin, run, tx } from './db.ts'
+import { batch, get, newCode, newId, newPin, run, type Statement } from './db.ts'
 import { hashPassword } from './auth.ts'
 
 const DEMO = { name: 'Moderação demo', email: 'demo@deck.local', password: 'demo-deck-2026' }
 
-let moderator = get<{ email: string }>('SELECT email FROM moderators LIMIT 1')
+let moderator = await get<{ email: string }>('SELECT email FROM moderators LIMIT 1')
 if (!moderator) {
-  run(
+  await run(
     'INSERT INTO moderators (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?)',
     newId(),
     DEMO.name,
@@ -46,18 +46,21 @@ const questions: [number, string, 'pending' | 'approved' | 'answered' | 'rejecte
   [17, 'Isso aqui não tem nada a ver com a palestra.', 'rejected', false],
 ]
 
-const id = (() => {
+const id = await (async () => {
   let code: string
   do code = newCode()
-  while (get('SELECT 1 FROM events WHERE id = ?', code))
+  while (await get('SELECT 1 FROM events WHERE id = ?', code))
   return code
 })()
 const now = Date.now()
 const pin = newPin()
 const tokens: string[] = []
 
-tx(() => {
-  run(
+// Tudo numa ida só ao banco (que pode ser o Turso, do outro lado da rede).
+const stmts: Statement[] = []
+const add = (sql: string, ...args: Statement['args']) => void stmts.push({ sql, args })
+{
+  add(
     'INSERT INTO events (id, name, pin, settings, theme, live, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id,
     'Aula magna de arquitetura de software',
@@ -69,14 +72,14 @@ tx(() => {
   )
   const sceneIds = scenes.map(([name, s], i) => {
     const sid = newId()
-    run('INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', sid, id, i, s.type, name, JSON.stringify(s.content), now)
+    add('INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', sid, id, i, s.type, name, JSON.stringify(s.content), now)
     return sid
   })
   const pids = people.map((name, i) => {
     const pid = newId()
     const token = newId(18)
     tokens.push(token)
-    run(
+    add(
       'INSERT INTO participants (id, event_id, name, email, grp, token, joined_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       pid,
       id,
@@ -91,7 +94,7 @@ tx(() => {
   })
   questions.forEach(([who, text, status, flagged], i) => {
     const qid = newId()
-    run(
+    add(
       `INSERT INTO questions (id, event_id, participant_id, author, anonymous, original, text, status, screen, flagged, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       qid,
@@ -107,10 +110,11 @@ tx(() => {
       now - (questions.length - i) * 90_000,
     )
     if (status === 'approved' || status === 'answered')
-      pids.slice(0, 3 + i).forEach((pid) => run('INSERT OR IGNORE INTO likes (question_id, participant_id) VALUES (?, ?)', qid, pid))
+      pids.slice(0, 3 + i).forEach((pid) => add('INSERT INTO likes (question_id, participant_id) VALUES (?, ?) ON CONFLICT DO NOTHING', qid, pid))
   })
-  run(`INSERT INTO reactions (event_id, scene_id, kind, count) VALUES (?, ?, 'applause', 48), (?, ?, 'love', 21)`, id, sceneIds[0]!, id, sceneIds[0]!)
-})
+  add(`INSERT INTO reactions (event_id, scene_id, kind, count) VALUES (?, ?, 'applause', 48), (?, ?, 'love', 21)`, id, sceneIds[0]!, id, sceneIds[0]!)
+}
+await batch(stmts)
 
 const base = process.env.PUBLIC_URL ?? 'http://localhost:5173'
 console.info(`

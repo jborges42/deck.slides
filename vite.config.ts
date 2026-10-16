@@ -27,8 +27,10 @@ export default defineConfig({
   server: {
     // O servidor de desenvolvimento só entrega o que o navegador precisa: nada de banco, código do servidor ou configuração.
     fs: {
-      deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/data/**', '*.db', '*.db-*', '**/server/**', '*.md', 'package.json', 'pnpm-*.yaml', 'tsconfig.json'],
+      // .vercel/ guarda o servidor empacotado por `pnpm build:vercel`.
+      deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/data/**', '*.db', '*.db-*', '**/server/**', '**/.vercel/**', '*.md', 'package.json', 'pnpm-*.yaml', 'tsconfig.json'],
     },
+    watch: { ignored: ['**/.vercel/**'] },
     proxy: {
       // Quando a API reinicia (node --watch), o proxy deixaria os SSE abertos pendurados para sempre:
       // fechar a resposta faz o navegador perceber a queda na hora e reconectar.

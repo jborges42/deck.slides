@@ -1,6 +1,6 @@
 // Tabelas de segurança da equipe: papéis, duas etapas, bloqueio por conta, sessões no servidor, códigos de
 // recuperação, links de senha, auditoria e equipe de cada evento. migrateSecurity roda a cada início.
-import { all, db, get, run, tx } from '../db.ts'
+import { all, db, get, run, tx } from '../sqlite.ts'
 import { audit } from './audit.ts'
 import type { Role, StaffUser } from '../../shared/admin.ts'
 

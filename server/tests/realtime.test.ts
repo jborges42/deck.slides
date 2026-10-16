@@ -768,13 +768,15 @@ test('latência até a tela: mediana do corte e do destaque de pergunta', async 
 test('ping: o batimento leva o relógio do servidor como número', async () => {
   const { event } = await createEvent(ana, 'Batimento')
   // O batimento real é a cada 15 s: o relógio de timers é simulado só durante este teste.
+  // Entre um avanço e outro, espera em tempo real: o banco pode estar na rede (Postgres) e responde no tempo dele.
+  const realTimeout = globalThis.setTimeout
   mock.timers.enable({ apis: ['setTimeout'] })
   try {
     const desk = await ana.stream(`/api/events/${event.id}/stream`)
     const before = Date.now()
-    for (let i = 0; i < 5 && !desk.messages.some((m) => m.event === 'ping'); i++) {
+    for (let i = 0; i < 100 && !desk.messages.some((m) => m.event === 'ping'); i++) {
       mock.timers.tick(15_000)
-      await new Promise((r) => setImmediate(r))
+      await new Promise((r) => realTimeout(r, 10))
     }
     desk.close()
     mock.timers.tick(1_000) // roda o que a desconexão agendou antes de devolver os timers reais

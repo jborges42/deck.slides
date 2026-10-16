@@ -1,7 +1,7 @@
 // Segunda etapa: TOTP (RFC 6238 sobre HOTP, RFC 4226) e códigos de recuperação de uso único.
 // O relógio é sempre o do servidor (ASVS 6.5.8); cada código vale uma vez só (6.5.1).
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { get, newCode, normalizeCode, run, tx } from '../db.ts'
+import { get, newCode, normalizeCode, run, tx } from '../sqlite.ts'
 import { decrypt, encrypt, hmac } from './secrets.ts'
 
 const STEP_MS = 30_000

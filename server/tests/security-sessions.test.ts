@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'deck-sec-sessions-'))
-const { all, get, run, sha256 } = await import('../db.ts')
+const { all, get, run, sha256 } = await import('../sqlite.ts')
 const { migrateSecurity } = await import('../security/schema.ts')
 const { updateSettings } = await import('../security/settings.ts')
 const s = await import('../security/sessions.ts')

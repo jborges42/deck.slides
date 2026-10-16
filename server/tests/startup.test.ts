@@ -11,7 +11,7 @@ const SECRET = 'segredo-de-teste-com-bem-mais-de-32-caracteres'
 const tmp = () => mkdtempSync(join(tmpdir(), 'deck-ops-'))
 
 // Configuração de quem roda o teste não pode vazar para o processo testado.
-const CONFIG = ['NODE_ENV', 'PORT', 'DATA_DIR', 'DB_PATH', 'PUBLIC_URL', 'TRUST_PROXY', 'MAX_UPLOAD_MB', 'SESSION_SECRET', 'SETUP_TOKEN']
+const CONFIG = ['NODE_ENV', 'PORT', 'DATA_DIR', 'DB_PATH', 'PUBLIC_URL', 'TRUST_PROXY', 'MAX_UPLOAD_MB', 'SESSION_SECRET', 'SETUP_TOKEN', 'VERCEL', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'BLOB_READ_WRITE_TOKEN', 'STREAM_MAX_S', 'DATABASE_URL', 'POSTGRES_URL', 'PG_TEST_URL']
 const env = (vars: Record<string, string>) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !CONFIG.includes(k))), ...vars })
 const run = (file: string, vars: Record<string, string>) => spawnSync(process.execPath, [file], { env: env(vars), encoding: 'utf8', timeout: 15_000 })
 

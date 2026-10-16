@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'deck-sec-passwords-'))
-const { get, run } = await import('../db.ts')
+const { get, run } = await import('../sqlite.ts')
 const { migrateSecurity } = await import('../security/schema.ts')
 const pw = await import('../security/passwords.ts')
 migrateSecurity()

@@ -52,3 +52,30 @@ export function upload<T>(path: string, file: File, onProgress?: (fraction: numb
     xhr.send(file)
   })
 }
+
+/**
+ * Envia um arquivo para a biblioteca do evento. Com o Vercel Blob no servidor, o arquivo vai do navegador direto
+ * para o Blob (a função da Vercel não aceita corpos grandes) e depois é confirmado; sem ele, vai no corpo.
+ */
+export async function sendMedia<T>(eventId: string, file: File, onProgress?: (fraction: number) => void): Promise<T> {
+  const base = `/events/${eventId}/media`
+  const ticket = await post<{ token: string | null; pathname: string; contentType: string }>(`${base}/ticket`, {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  })
+  if (!ticket.token) return upload<T>(base, file, onProgress)
+  const { put } = await import('@vercel/blob/client')
+  try {
+    await put(ticket.pathname, file, {
+      access: 'public',
+      token: ticket.token,
+      contentType: ticket.contentType,
+      multipart: file.size > 50 * 1024 * 1024, // vídeo grande: partes em paralelo, cada uma com nova tentativa
+      onUploadProgress: (p) => onProgress?.(p.percentage / 100),
+    })
+  } catch {
+    throw new ApiError('Falha no envio do arquivo. Verifique a rede e tente de novo.', 0)
+  }
+  return post<T>(`${base}/complete`, { pathname: ticket.pathname, name: file.name })
+}

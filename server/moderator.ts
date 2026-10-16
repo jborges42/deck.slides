@@ -5,7 +5,9 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { all, get, newCode, newId, newPin, run, tx, UPLOADS_DIR } from './db.ts'
+import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
+import { del, head } from '@vercel/blob'
+import { all, batch, get, newCode, newId, newPin, run, tx, UPLOADS_DIR } from './db.ts'
 import { claimPairing, kick, kickModerator, kickScreen, publish, publishCounts, stream } from './hub.ts'
 import { eventRow, mediaRow, nextPosition, question, scene, scenes, toEventInfo, toMedia, updateLive, type EventRow } from './model.ts'
 import { hashPassword, overLimit, requireModerator, verifyPassword, startModeratorSession, type Env } from './auth.ts'
@@ -183,8 +185,8 @@ const SCENE_NAMES: Record<Scene['type'], string> = {
   timer: 'Cronômetro',
 }
 
-moderator.get('/events', (c) => {
-  const rows = all<{ id: string; name: string; created_at: number; live: string; participants: number; questions: number }>(
+moderator.get('/events', async (c) => {
+  const rows = await all<{ id: string; name: string; created_at: number; live: string; participants: number; questions: number }>(
     `SELECT e.id, e.name, e.created_at, e.live,
        (SELECT COUNT(*) FROM participants p WHERE p.event_id = e.id) AS participants,
        (SELECT COUNT(*) FROM questions q WHERE q.event_id = e.id) AS questions
@@ -208,22 +210,16 @@ moderator.post('/events', async (c) => {
   const { name } = await body(c, z.object({ name: z.string().trim().min(1).max(120) }))
   let id: string
   do id = newCode()
-  while (get('SELECT 1 FROM events WHERE id = ?', id))
+  while (await get('SELECT 1 FROM events WHERE id = ?', id))
   const now = Date.now()
-  tx(() => {
-    run(
-      'INSERT INTO events (id, name, pin, settings, theme, live, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id,
-      name,
-      newPin(),
-      JSON.stringify(DEFAULT_SETTINGS),
-      JSON.stringify(DEFAULT_THEME),
-      JSON.stringify(defaultLive()),
-      now,
-    )
-    defaultScenes(name).forEach((s, i) =>
-      run(
-        'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  await batch([
+    {
+      sql: 'INSERT INTO events (id, name, pin, settings, theme, live, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, name, newPin(), JSON.stringify(DEFAULT_SETTINGS), JSON.stringify(DEFAULT_THEME), JSON.stringify(defaultLive()), now],
+    },
+    ...defaultScenes(name).map((s, i) => ({
+      sql: 'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [
         newId(),
         id,
         i,
@@ -231,9 +227,9 @@ moderator.post('/events', async (c) => {
         s.type === 'title' ? 'Abertura' : s.type === 'timer' ? 'Intervalo' : SCENE_NAMES[s.type],
         JSON.stringify(s.content),
         now,
-      ),
-    )
-  })
+      ],
+    })),
+  ])
   return c.json({ id }, 201)
 })
 
@@ -249,8 +245,8 @@ moderator.patch('/events/:id', async (c) => {
     }),
   )
   // Relê depois do corpo: outro PATCH pode ter gravado enquanto este chegava (senão desfaria aquela alteração).
-  const info = toEventInfo(eventRow(ev.id) ?? ev)
-  run(
+  const info = toEventInfo((await eventRow(ev.id)) ?? ev)
+  await run(
     'UPDATE events SET name = ?, pin = ?, settings = ?, theme = ? WHERE id = ?',
     patch.name ?? info.name,
     patch.pin ?? info.pin,
@@ -258,7 +254,7 @@ moderator.patch('/events/:id', async (c) => {
     JSON.stringify(patch.theme ?? info.theme),
     ev.id,
   )
-  publish(ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
@@ -268,39 +264,53 @@ moderator.patch('/events/:id', async (c) => {
 moderator.post('/events/:id/screens', async (c) => {
   const ev = c.get('event')
   const input = await body(c, z.object({ code: z.string().trim().min(4).max(20), name: z.string().trim().max(60).optional() }))
-  if (overLimit(`claim:${c.get('moderator').id}`, 20, 10 * 60_000))
+  if (await overLimit(`claim:${c.get('moderator').id}`, 20, 10 * 60_000))
     return c.json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' }, 429)
-  const n = get<{ n: number }>('SELECT COUNT(*) AS n FROM screens WHERE event_id = ?', ev.id)?.n ?? 0
-  const id = claimPairing(input.code, ev.id, input.name || `Tela ${n + 1}`)
+  const n = (await get<{ n: number }>('SELECT COUNT(*) AS n FROM screens WHERE event_id = ?', ev.id))?.n ?? 0
+  const id = await claimPairing(input.code, ev.id, input.name || `Tela ${n + 1}`)
   if (!id) return c.json({ error: 'Código não encontrado ou expirado. Confira o código exibido na tela.' }, 404)
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json({ id }, 201)
 })
 
 moderator.patch('/events/:id/screens/:sid', async (c) => {
   const ev = c.get('event')
   const { name } = await body(c, z.object({ name: z.string().trim().min(1).max(60) }))
-  const res = run('UPDATE screens SET name = ? WHERE event_id = ? AND id = ?', name, ev.id, c.req.param('sid'))
+  const res = await run('UPDATE screens SET name = ? WHERE event_id = ? AND id = ?', name, ev.id, c.req.param('sid'))
   if (!res.changes) return c.json({ error: 'Tela não encontrada.' }, 404)
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true })
 })
 
 /** Desconecta a tela: o computador da projeção volta a mostrar um código de pareamento. */
-moderator.delete('/events/:id/screens/:sid', (c) => {
+moderator.delete('/events/:id/screens/:sid', async (c) => {
   const ev = c.get('event')
   const sid = c.req.param('sid')
-  run('DELETE FROM screens WHERE event_id = ? AND id = ?', ev.id, sid)
-  kickScreen(ev.id, sid)
-  publish(ev.id, 'moderator')
+  await run('DELETE FROM screens WHERE event_id = ? AND id = ?', ev.id, sid)
+  await kickScreen(ev.id, sid)
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true })
 })
 
 moderator.delete('/events/:id', async (c) => {
   const ev = c.get('event')
-  run('DELETE FROM events WHERE id = ?', ev.id)
+  const files = await all<{ file: string; blob_url: string | null }>('SELECT file, blob_url FROM media WHERE event_id = ?', ev.id)
+  // Filhos antes do evento, numa ida só: o Turso não aplica ON DELETE CASCADE.
+  await batch(
+    [
+      'DELETE FROM likes WHERE question_id IN (SELECT id FROM questions WHERE event_id = ?)',
+      'DELETE FROM questions WHERE event_id = ?',
+      'DELETE FROM participants WHERE event_id = ?',
+      'DELETE FROM screens WHERE event_id = ?',
+      'DELETE FROM scenes WHERE event_id = ?',
+      'DELETE FROM reactions WHERE event_id = ?',
+      'DELETE FROM media WHERE event_id = ?',
+      'DELETE FROM events WHERE id = ?',
+    ].map((sql) => ({ sql, args: [ev.id] })),
+  )
+  await removeFiles(ev.id, files)
   await rm(join(UPLOADS_DIR, ev.id), { recursive: true, force: true })
-  publish(ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
@@ -314,17 +324,17 @@ moderator.post('/events/:id/scenes', async (c) => {
   const ev = c.get('event')
   const input = await body(c, z.intersection(z.object({ name: z.string().trim().max(80).optional() }), sceneBody))
   const id = newId()
-  run(
+  await run(
     'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     id,
     ev.id,
-    nextPosition(ev.id),
+    await nextPosition(ev.id),
     input.type,
     input.name || SCENE_NAMES[input.type],
     JSON.stringify(input.content),
     Date.now(),
   )
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json({ id }, 201)
 })
 
@@ -332,16 +342,16 @@ moderator.patch('/events/:id/scenes/:sid', async (c) => {
   const ev = c.get('event')
   const input = await body(c, z.object({ name: z.string().trim().min(1).max(80).optional(), content: z.unknown().optional() }))
   // Cena e estado ao vivo lidos depois do corpo: outra requisição pode ter mudado os dois enquanto ele chegava.
-  const current = scene(ev.id, c.req.param('sid'))
+  const current = await scene(ev.id, c.req.param('sid'))
   if (!current) return c.json({ error: 'Cena não encontrada.' }, 404)
   const content =
     input.content === undefined ? current.content : parse(sceneBody, { type: current.type, content: input.content }).content
-  run('UPDATE scenes SET name = ?, content = ? WHERE id = ?', input.name ?? current.name, JSON.stringify(content), current.id)
+  await run('UPDATE scenes SET name = ?, content = ? WHERE id = ?', input.name ?? current.name, JSON.stringify(content), current.id)
   // Cronômetro desta cena em uso: ajustes (duração, limiares, mensagem) valem para o relógio que está correndo.
   const updated = { ...current, content } as Scene
   const ev2 =
     updated.type === 'timer'
-      ? updateLive(ev.id, (live) => {
+      ? await updateLive(ev.id, (live) => {
           if (live.timer.sceneId !== current.id) return
           Object.assign(live.timer, {
             mode: updated.content.mode,
@@ -354,43 +364,37 @@ moderator.patch('/events/:id/scenes/:sid', async (c) => {
           })
         })
       : null
-  const live = (ev2 ?? toEventInfo(eventRow(ev.id) ?? ev)).live
-  publish(ev.id, ...(live.program === current.id || live.timer.sceneId === current.id ? [] : (['moderator'] as const)))
+  const live = (ev2 ?? toEventInfo((await eventRow(ev.id)) ?? ev)).live
+  await publish(ev.id, ...(live.program === current.id || live.timer.sceneId === current.id ? [] : (['moderator'] as const)))
   return c.json({ ok: true })
 })
 
-moderator.post('/events/:id/scenes/:sid/duplicate', (c) => {
+moderator.post('/events/:id/scenes/:sid/duplicate', async (c) => {
   const ev = c.get('event')
-  const src = scene(ev.id, c.req.param('sid'))
+  const src = await scene(ev.id, c.req.param('sid'))
   if (!src) return c.json({ error: 'Cena não encontrada.' }, 404)
   const id = newId()
-  tx(() => {
-    run('UPDATE scenes SET position = position + 1 WHERE event_id = ? AND position > ?', ev.id, src.position)
-    run(
-      'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id,
-      ev.id,
-      src.position + 1,
-      src.type,
-      `${src.name} (cópia)`.slice(0, 80),
-      JSON.stringify(src.content),
-      Date.now(),
-    )
-  })
-  publish(ev.id, 'moderator')
+  await batch([
+    { sql: 'UPDATE scenes SET position = position + 1 WHERE event_id = ? AND position > ?', args: [ev.id, src.position] },
+    {
+      sql: 'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, ev.id, src.position + 1, src.type, `${src.name} (cópia)`.slice(0, 80), JSON.stringify(src.content), Date.now()],
+    },
+  ])
+  await publish(ev.id, 'moderator')
   return c.json({ id }, 201)
 })
 
-moderator.delete('/events/:id/scenes/:sid', (c) => {
+moderator.delete('/events/:id/scenes/:sid', async (c) => {
   const ev = c.get('event')
   const sid = c.req.param('sid')
-  if (!run('DELETE FROM scenes WHERE event_id = ? AND id = ?', ev.id, sid).changes) return c.json({ error: 'Cena não encontrada.' }, 404)
-  updateLive(ev.id, (live) => {
+  if (!(await run('DELETE FROM scenes WHERE event_id = ? AND id = ?', ev.id, sid)).changes) return c.json({ error: 'Cena não encontrada.' }, 404)
+  await updateLive(ev.id, (live) => {
     if (live.program === sid) live.program = null
     if (live.preview === sid) live.preview = null
     if (live.playback.sceneId === sid) live.playback = defaultLive().playback // vídeo apagado sai do ar como num corte
   })
-  publish(ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
@@ -398,10 +402,10 @@ moderator.post('/events/:id/scenes/order', async (c) => {
   const ev = c.get('event')
   const { ids } = await body(c, z.object({ ids: z.array(z.string()).max(1000) }))
   // Lista desatualizada ou parcial não repete posições: as listadas na ordem pedida; as demais depois, na ordem atual.
-  const current = scenes(ev.id).map((s) => s.id)
+  const current = (await scenes(ev.id)).map((s) => s.id)
   const order = [...new Set(ids.filter((id) => current.includes(id))), ...current.filter((id) => !ids.includes(id))]
-  tx(() => order.forEach((id, i) => run('UPDATE scenes SET position = ? WHERE event_id = ? AND id = ?', i, ev.id, id)))
-  publish(ev.id, 'moderator')
+  await batch(order.map((id, i) => ({ sql: 'UPDATE scenes SET position = ? WHERE event_id = ? AND id = ?', args: [i, ev.id, id] })))
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true })
 })
 
@@ -434,10 +438,13 @@ moderator.post('/events/:id/live', async (c) => {
   const now = Date.now()
   let programChanged = false
   let error: string | null = null
-  updateLive(ev.id, (live) => {
+  await updateLive(ev.id, async (live) => {
+    // A transação pode ser refeita (conflito no Postgres): cada tentativa começa do zero.
+    programChanged = false
+    error = null
     switch (cmd.op) {
       case 'preview':
-        if (cmd.sceneId !== null && !scene(ev.id, cmd.sceneId)) error = 'Cena não encontrada.' // "" também não é cena
+        if (cmd.sceneId !== null && !(await scene(ev.id, cmd.sceneId))) error = 'Cena não encontrada.' // "" também não é cena
         else live.preview = cmd.sceneId
         break
       case 'take': {
@@ -447,7 +454,7 @@ moderator.post('/events/:id/live', async (c) => {
           break
         }
         if (now - live.takenAt < 400) break // toque duplo acidental
-        const s = scene(ev.id, live.preview)
+        const s = await scene(ev.id, live.preview)
         if (!s) {
           error = 'Cena não encontrada.'
           break
@@ -503,7 +510,7 @@ moderator.post('/events/:id/live', async (c) => {
     }
   })
   if (error) return c.json({ error }, 404)
-  publish(ev.id, ...(programChanged ? [] : (['moderator', 'screen'] as const)))
+  await publish(ev.id, ...(programChanged ? [] : (['moderator', 'screen'] as const)))
   return c.json({ ok: true })
 })
 
@@ -512,7 +519,7 @@ moderator.post('/events/:id/live', async (c) => {
 moderator.post('/events/:id/questions', async (c) => {
   const ev = c.get('event')
   const input = await body(c, z.object({ text: z.string().trim().min(1).max(1000), author: z.string().trim().max(80) }))
-  run(
+  await run(
     `INSERT INTO questions (id, event_id, participant_id, author, anonymous, original, text, status, created_at)
      VALUES (?, ?, NULL, ?, ?, ?, ?, 'approved', ?)`,
     newId(),
@@ -523,7 +530,7 @@ moderator.post('/events/:id/questions', async (c) => {
     input.text,
     Date.now(),
   )
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true }, 201)
 })
 
@@ -538,13 +545,13 @@ moderator.patch('/events/:id/questions/:qid', async (c) => {
     }),
   )
   // Lida depois do corpo: uma edição lenta não desfaz rejeição ou saída da tela feitas enquanto ela chegava.
-  const q = question(ev.id, c.req.param('qid'))
+  const q = await question(ev.id, c.req.param('qid'))
   if (!q) return c.json({ error: 'Pergunta não encontrada.' }, 404)
   const status = input.status ?? q.status
   const text = input.text?.replace(/\s+/g, ' ') ?? q.text
   // Pergunta que deixa de estar aprovada sai da tela.
   const screen = status === 'approved' || status === 'answered' ? q.screen : null
-  run(
+  await run(
     'UPDATE questions SET text = ?, status = ?, anonymous = ?, screen = ?, flagged = ? WHERE id = ?',
     text,
     status,
@@ -553,39 +560,39 @@ moderator.patch('/events/:id/questions/:qid', async (c) => {
     hasFlagWord(text, toEventInfo(ev).settings.flagWords) ? 1 : 0,
     q.id,
   )
-  publish(ev.id, 'moderator', ...(q.participantId ? ([`p:${q.participantId}`] as const) : []), ...(q.screen !== null ? (['screen', 'participants'] as const) : []))
+  await publish(ev.id, 'moderator', ...(q.participantId ? ([`p:${q.participantId}`] as const) : []), ...(q.screen !== null ? (['screen', 'participants'] as const) : []))
   return c.json({ ok: true })
 })
 
 /** Coloca ou tira uma pergunta da tela. `solo` limpa as demais antes. */
 moderator.post('/events/:id/questions/:qid/screen', async (c) => {
   const ev = c.get('event')
-  const q = question(ev.id, c.req.param('qid'))
+  const q = await question(ev.id, c.req.param('qid'))
   if (!q) return c.json({ error: 'Pergunta não encontrada.' }, 404)
   const { on, solo } = await body(c, z.object({ on: z.boolean(), solo: z.boolean().optional() }))
   const { autoAnswer } = toEventInfo(ev).settings
-  tx(() => {
+  await tx(async () => {
     if (solo) {
       // Destacar outra pergunta: a que estava na tela pode virar "respondida" automaticamente.
       if (autoAnswer)
-        run(
+        await run(
           `UPDATE questions SET status = 'answered' WHERE event_id = ? AND screen IS NOT NULL AND id != ? AND status = 'approved'`,
           ev.id,
           q.id,
         )
-      run('UPDATE questions SET screen = NULL WHERE event_id = ?', ev.id)
+      await run('UPDATE questions SET screen = NULL WHERE event_id = ?', ev.id)
     }
     if (on) {
-      const max = get<{ m: number | null }>('SELECT MAX(screen) AS m FROM questions WHERE event_id = ?', ev.id)?.m ?? -1
+      const max = (await get<{ m: number | null }>('SELECT MAX(screen) AS m FROM questions WHERE event_id = ?', ev.id))?.m ?? -1
       // Aprovar ao exibir: o moderador já está escolhendo a pergunta.
-      run(
+      await run(
         `UPDATE questions SET screen = ?, status = CASE WHEN status = 'answered' THEN status ELSE 'approved' END WHERE id = ?`,
         max + 1,
         q.id,
       )
-    } else run('UPDATE questions SET screen = NULL WHERE id = ?', q.id)
+    } else await run('UPDATE questions SET screen = NULL WHERE id = ?', q.id)
   })
-  publish(ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
@@ -596,39 +603,38 @@ moderator.post('/events/:id/questions/bulk', async (c) => {
     z.object({ ids: z.array(z.string()).min(1).max(1000), status: z.enum(['pending', 'approved', 'rejected', 'answered']) }),
   )
   const keepScreen = status === 'approved' || status === 'answered'
-  tx(() =>
-    ids.forEach((id) =>
-      run(
-        `UPDATE questions SET status = ?, screen = CASE WHEN ? THEN screen ELSE NULL END WHERE event_id = ? AND id = ?`,
-        status,
-        keepScreen ? 1 : 0,
-        ev.id,
-        id,
-      ),
-    ),
+  await batch(
+    ids.map((id) => ({
+      sql: `UPDATE questions SET status = ?, screen = CASE WHEN ? = 1 THEN screen ELSE NULL END WHERE event_id = ? AND id = ?`,
+      args: [status, keepScreen ? 1 : 0, ev.id, id],
+    })),
   )
-  publish(ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
-moderator.post('/events/:id/questions/screen/clear', (c) => {
+moderator.post('/events/:id/questions/screen/clear', async (c) => {
   const ev = c.get('event')
-  run('UPDATE questions SET screen = NULL WHERE event_id = ?', ev.id)
-  publish(ev.id)
+  await run('UPDATE questions SET screen = NULL WHERE event_id = ?', ev.id)
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
-moderator.delete('/events/:id/questions/:qid', (c) => {
+moderator.delete('/events/:id/questions/:qid', async (c) => {
   const ev = c.get('event')
-  run('DELETE FROM questions WHERE event_id = ? AND id = ?', ev.id, c.req.param('qid'))
-  publish(ev.id)
+  const qid = c.req.param('qid')
+  await batch([
+    { sql: 'DELETE FROM likes WHERE question_id IN (SELECT id FROM questions WHERE event_id = ? AND id = ?)', args: [ev.id, qid] },
+    { sql: 'DELETE FROM questions WHERE event_id = ? AND id = ?', args: [ev.id, qid] },
+  ])
+  await publish(ev.id)
   return c.json({ ok: true })
 })
 
-moderator.post('/events/:id/reactions/reset', (c) => {
+moderator.post('/events/:id/reactions/reset', async (c) => {
   const ev = c.get('event')
-  run('DELETE FROM reactions WHERE event_id = ?', ev.id)
-  publishCounts(ev.id) // totais só viajam em `counts`; o snapshot não os carrega
+  await run('DELETE FROM reactions WHERE event_id = ?', ev.id)
+  await publishCounts(ev.id) // totais só viajam em `counts`; o snapshot não os carrega
   return c.json({ ok: true })
 })
 
@@ -644,21 +650,13 @@ moderator.post('/events/:id/participants', async (c) => {
   const ev = c.get('event')
   const { people } = await body(c, z.object({ people: z.array(person).min(1).max(5000) }))
   const now = Date.now()
-  tx(() =>
-    people.forEach((p) =>
-      run(
-        'INSERT INTO participants (id, event_id, name, email, grp, token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        newId(),
-        ev.id,
-        p.name,
-        p.email,
-        p.group,
-        newId(18),
-        now,
-      ),
-    ),
+  await batch(
+    people.map((p) => ({
+      sql: 'INSERT INTO participants (id, event_id, name, email, grp, token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [newId(), ev.id, p.name, p.email, p.group, newId(18), now],
+    })),
   )
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json({ created: people.length }, 201)
 })
 
@@ -675,13 +673,13 @@ moderator.patch('/events/:id/participants/:pid', async (c) => {
     }),
   )
   // Lido depois do corpo: uma edição lenta não desfaz um bloqueio feito enquanto ela chegava.
-  const p = get<{ name: string; email: string; grp: string; blocked: number }>(
+  const p = await get<{ name: string; email: string; grp: string; blocked: number }>(
     'SELECT name, email, grp, blocked FROM participants WHERE event_id = ? AND id = ?',
     ev.id,
     pid,
   )
   if (!p) return c.json({ error: 'Participante não encontrado.' }, 404)
-  run(
+  await run(
     'UPDATE participants SET name = ?, email = ?, grp = ?, blocked = ? WHERE id = ?',
     input.name ?? p.name,
     input.email ?? p.email,
@@ -689,16 +687,16 @@ moderator.patch('/events/:id/participants/:pid', async (c) => {
     (input.blocked ?? !!p.blocked) ? 1 : 0,
     pid,
   )
-  if (input.blocked) kick(ev.id, pid)
-  publish(ev.id, 'moderator', `p:${pid}`)
+  if (input.blocked) await kick(ev.id, pid)
+  await publish(ev.id, 'moderator', `p:${pid}`)
   return c.json({ ok: true })
 })
 
 /** Gera um novo link de convite; o anterior deixa de funcionar e a sessão atual cai. */
-moderator.post('/events/:id/participants/:pid/link', (c) => {
+moderator.post('/events/:id/participants/:pid/link', async (c) => {
   const ev = c.get('event')
   const pid = c.req.param('pid')
-  const res = run(
+  const res = await run(
     'UPDATE participants SET token = ?, joined_at = NULL, session_epoch = ? WHERE event_id = ? AND id = ?',
     newId(18),
     Date.now(), // sessões abertas com o link antigo deixam de valer
@@ -706,25 +704,35 @@ moderator.post('/events/:id/participants/:pid/link', (c) => {
     pid,
   )
   if (!res.changes) return c.json({ error: 'Participante não encontrado.' }, 404)
-  kick(ev.id, pid)
-  publish(ev.id, 'moderator')
+  await kick(ev.id, pid)
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true })
 })
 
-moderator.delete('/events/:id/participants/:pid', (c) => {
+moderator.delete('/events/:id/participants/:pid', async (c) => {
   const ev = c.get('event')
   const pid = c.req.param('pid')
-  run('DELETE FROM participants WHERE event_id = ? AND id = ?', ev.id, pid)
-  kick(ev.id, pid)
-  publish(ev.id, 'moderator')
-  publishCounts(ev.id) // as curtidas da pessoa saem junto (cascade)
+  // Só mexe em curtidas e perguntas se a pessoa for deste evento; as perguntas ficam, sem autor vinculado.
+  const mine = 'SELECT id FROM participants WHERE event_id = ? AND id = ?'
+  await batch([
+    { sql: `DELETE FROM likes WHERE participant_id IN (${mine})`, args: [ev.id, pid] },
+    { sql: `UPDATE questions SET participant_id = NULL WHERE participant_id IN (${mine})`, args: [ev.id, pid] },
+    { sql: 'DELETE FROM participants WHERE event_id = ? AND id = ?', args: [ev.id, pid] },
+  ])
+  await kick(ev.id, pid)
+  await publish(ev.id, 'moderator')
+  await publishCounts(ev.id) // as curtidas da pessoa saem junto
   return c.json({ ok: true })
 })
 
 // ---------- mídia ----------
+// Com BLOB_READ_WRITE_TOKEN (Vercel), os arquivos vão para o Vercel Blob: a função só aceita corpos de até 4,5 MB,
+// então o navegador envia direto ao Blob com um token preso a caminho, tipo e tamanho (ticket) e depois confirma
+// (complete). Sem ele, o arquivo vem no corpo da requisição e fica em DATA_DIR/uploads.
 
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB ?? 1024) * 1024 * 1024
-const FONT_EXT = new Set(['.woff2', '.woff', '.ttf', '.otf'])
+const FONT_MIME: Record<string, string> = { '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf' }
 // A extensão gravada vem do tipo validado, nunca do nome enviado: "foto.html" com image/png vira .png.
 const MIME_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -738,9 +746,11 @@ const MIME_EXT: Record<string, string> = {
   'video/ogg': '.ogv',
   'video/quicktime': '.mov',
 }
+const UNSUPPORTED = 'Formato não suportado. Envie imagem (PNG, JPG, WebP, GIF, AVIF, SVG), vídeo (MP4, WebM) ou fonte (WOFF2, WOFF, TTF, OTF).'
+const TOO_LARGE = 'Arquivo acima do limite de envio.'
 
 function mediaKind(mime: string, nameExt: string): { kind: 'image' | 'video' | 'font'; ext: string } | null {
-  if (FONT_EXT.has(nameExt)) return { kind: 'font', ext: nameExt }
+  if (FONT_MIME[nameExt]) return { kind: 'font', ext: nameExt }
   const ext = MIME_EXT[mime]
   if (!ext) return null
   return { kind: mime.startsWith('image/') ? 'image' : 'video', ext }
@@ -753,17 +763,91 @@ const decodeName = (raw: string) => {
     return 'arquivo'
   }
 }
+const cleanName = (raw: string) => raw.replace(/[\u0000-\u001f]/g, '').slice(0, 200) || 'arquivo'
+
+/** Apaga os arquivos de mídia, no Blob ou em disco. */
+async function removeFiles(eventId: string, files: { file: string; blob_url: string | null }[]) {
+  const urls = files.flatMap((f) => (f.blob_url ? [f.blob_url] : []))
+  if (urls.length) await del(urls, { token: BLOB_TOKEN })
+  await Promise.all(files.filter((f) => !f.blob_url).map((f) => rm(join(UPLOADS_DIR, eventId, f.file), { force: true })))
+}
+
+/** Envio direto ao Blob: valida o arquivo declarado e devolve um token só para ele. Sem Blob, token null. */
+moderator.post('/events/:id/media/ticket', async (c) => {
+  const ev = c.get('event')
+  const input = await body(c, z.object({ name: z.string().max(1000), type: z.string().max(200), size: z.number().int().min(0) }))
+  const mime = input.type.trim().toLowerCase()
+  const detected = mediaKind(mime, extname(cleanName(input.name)).toLowerCase())
+  if (!detected) return c.json({ error: UNSUPPORTED }, 415)
+  if (input.size > MAX_UPLOAD) return c.json({ error: TOO_LARGE }, 413)
+  if (!input.size) return c.json({ error: 'Arquivo vazio.' }, 400)
+  if (!BLOB_TOKEN) return c.json({ token: null })
+  const pathname = `media/${ev.id}/${newId()}${detected.ext}`
+  const contentType = detected.kind === 'font' ? FONT_MIME[detected.ext]! : mime
+  const token = await generateClientTokenFromReadWriteToken({
+    token: BLOB_TOKEN,
+    pathname,
+    allowedContentTypes: [contentType],
+    maximumSizeInBytes: MAX_UPLOAD,
+    validUntil: Date.now() + 60 * 60_000,
+  })
+  return c.json({ token, pathname, contentType })
+})
+
+/** Confirma um envio direto: confere no Blob o tipo e o tamanho reais antes de registrar na biblioteca. */
+moderator.post('/events/:id/media/complete', async (c) => {
+  const ev: EventRow = c.get('event')
+  if (!BLOB_TOKEN) return c.json({ error: 'Envio direto desativado neste servidor.' }, 404)
+  const input = await body(c, z.object({ pathname: z.string().max(300), name: z.string().max(1000) }))
+  const match = /^media\/([0-9A-Z]+)\/([\w-]+)(\.[a-z0-9]+)$/.exec(input.pathname)
+  if (!match || match[1] !== ev.id) return c.json({ error: 'Arquivo inválido.' }, 400)
+  const [, , id, ext] = match as unknown as [string, string, string, string]
+  const expected = FONT_MIME[ext] ?? Object.keys(MIME_EXT).find((t) => MIME_EXT[t] === ext)
+  const info = await head(input.pathname, { token: BLOB_TOKEN }).catch(() => null)
+  if (!info) return c.json({ error: 'Arquivo não encontrado. Envie de novo.' }, 404)
+  // O token já restringe tipo e tamanho; conferir aqui também barra um envio feito por fora dele.
+  const problem = info.contentType !== expected ? ([UNSUPPORTED, 415] as const) : info.size > MAX_UPLOAD ? ([TOO_LARGE, 413] as const) : !info.size ? (['Arquivo vazio.', 400] as const) : null
+  if (problem) {
+    await del(info.url, { token: BLOB_TOKEN })
+    return c.json({ error: problem[0] }, problem[1])
+  }
+  const row = {
+    id,
+    event_id: ev.id,
+    kind: FONT_MIME[ext] ? ('font' as const) : expected!.startsWith('image/') ? ('image' as const) : ('video' as const),
+    name: cleanName(input.name),
+    file: `${id}${ext}`,
+    mime: info.contentType,
+    size: info.size,
+    created_at: Date.now(),
+  }
+  await run(
+    'INSERT INTO media (id, event_id, kind, name, file, mime, size, created_at, blob_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+    row.id,
+    row.event_id,
+    row.kind,
+    row.name,
+    row.file,
+    row.mime,
+    row.size,
+    row.created_at,
+    info.url,
+  )
+  await publish(ev.id, 'moderator')
+  return c.json(toMedia(row), 201)
+})
 
 /** Upload em corpo bruto (sem multipart), gravado em disco por streaming. Nome em X-Filename. */
 moderator.post('/events/:id/media', async (c) => {
   const ev: EventRow = c.get('event')
-  const name = decodeName(c.req.header('x-filename') ?? 'arquivo').replace(/[\u0000-\u001f]/g, '').slice(0, 200) || 'arquivo'
+  if (BLOB_TOKEN) return c.json({ error: 'Este servidor recebe arquivos pelo envio direto. Recarregue a página e tente de novo.' }, 409)
+  const name = cleanName(decodeName(c.req.header('x-filename') ?? 'arquivo'))
   const mime = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase() || 'application/octet-stream'
   const detected = mediaKind(mime, extname(name).toLowerCase())
-  if (!detected) return c.json({ error: 'Formato não suportado. Envie imagem (PNG, JPG, WebP, GIF, AVIF, SVG), vídeo (MP4, WebM) ou fonte (WOFF2, WOFF, TTF, OTF).' }, 415)
+  if (!detected) return c.json({ error: UNSUPPORTED }, 415)
   const { kind, ext } = detected
   const declared = Number(c.req.header('content-length') ?? 0)
-  if (declared > MAX_UPLOAD) return c.json({ error: 'Arquivo acima do limite de envio.' }, 413)
+  if (declared > MAX_UPLOAD) return c.json({ error: TOO_LARGE }, 413)
   if (!c.req.raw.body) return c.json({ error: 'Arquivo vazio.' }, 400)
 
   const id = newId()
@@ -781,7 +865,7 @@ moderator.post('/events/:id/media', async (c) => {
     await pipeline(Readable.fromWeb(c.req.raw.body as import('node:stream/web').ReadableStream), limit, createWriteStream(join(dir, file)))
   } catch {
     await rm(join(dir, file), { force: true })
-    if (size > MAX_UPLOAD) return c.json({ error: 'Arquivo acima do limite de envio.' }, 413)
+    if (size > MAX_UPLOAD) return c.json({ error: TOO_LARGE }, 413)
     return c.json({ error: 'Falha no envio do arquivo.' }, 400)
   }
   // Corpo presente mas sem bytes (Content-Length: 0) também é envio vazio.
@@ -790,7 +874,7 @@ moderator.post('/events/:id/media', async (c) => {
     return c.json({ error: 'Arquivo vazio.' }, 400)
   }
   const now = Date.now()
-  run(
+  await run(
     'INSERT INTO media (id, event_id, kind, name, file, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     id,
     ev.id,
@@ -801,17 +885,17 @@ moderator.post('/events/:id/media', async (c) => {
     size,
     now,
   )
-  publish(ev.id, 'moderator')
+  await publish(ev.id, 'moderator')
   return c.json(toMedia({ id, event_id: ev.id, kind, name, file, mime, size, created_at: now }), 201)
 })
 
 moderator.delete('/events/:id/media/:mid', async (c) => {
   const ev = c.get('event')
-  const m = mediaRow(ev.id, c.req.param('mid'))
+  const m = await mediaRow(ev.id, c.req.param('mid'))
   if (!m) return c.json({ error: 'Arquivo não encontrado.' }, 404)
-  run('DELETE FROM media WHERE id = ?', m.id)
-  await rm(join(UPLOADS_DIR, ev.id, m.file), { force: true })
-  publish(ev.id, 'moderator')
+  await run('DELETE FROM media WHERE id = ?', m.id)
+  await removeFiles(ev.id, [m])
+  await publish(ev.id, 'moderator')
   return c.json({ ok: true })
 })
 
@@ -820,8 +904,8 @@ moderator.delete('/events/:id/media/:mid', async (c) => {
 moderator.use('/moderators', requireModerator)
 moderator.use('/moderators/*', requireModerator)
 
-moderator.get('/moderators', (c) =>
-  c.json(all('SELECT id, name, email, created_at AS createdAt FROM moderators ORDER BY name COLLATE NOCASE')),
+moderator.get('/moderators', async (c) =>
+  c.json(await all('SELECT id, name, email, created_at AS "createdAt" FROM moderators ORDER BY lower(name)')),
 )
 
 moderator.post('/moderators', async (c) => {
@@ -833,18 +917,33 @@ moderator.post('/moderators', async (c) => {
       password: z.string().min(8, 'A senha precisa de ao menos 8 caracteres.').max(200),
     }),
   )
-  // Hash antes da verificação: checar e inserir sem await no meio evita 500 em dois envios simultâneos.
   const password = await hashPassword(input.password)
-  if (get('SELECT 1 FROM moderators WHERE email = ?', input.email)) return c.json({ error: 'Já existe uma conta com este e-mail.' }, 409)
-  run('INSERT INTO moderators (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?)', newId(), input.name, input.email, password, Date.now())
+  // Conferir e inserir num comando só: dois envios simultâneos com o mesmo e-mail viram uma conta e um 409, não um 500.
+  const { changes } = await run(
+    'INSERT INTO moderators (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+    newId(),
+    input.name,
+    input.email,
+    password,
+    Date.now(),
+  )
+  if (!changes) return c.json({ error: 'Já existe uma conta com este e-mail.' }, 409)
   return c.json({ ok: true }, 201)
 })
 
-moderator.delete('/moderators/:mid', (c) => {
+moderator.delete('/moderators/:mid', async (c) => {
   const mid = c.req.param('mid')
-  if (mid === c.get('moderator').id) return c.json({ error: 'Você não pode remover a própria conta.' }, 400)
-  run('DELETE FROM moderators WHERE id = ?', mid)
-  kickModerator(mid) // console aberto deixa de receber dados do evento
+  const me = c.get('moderator').id
+  if (mid === me) return c.json({ error: 'Você não pode remover a própria conta.' }, 400)
+  // Conferir quem remove e remover na mesma transação: em remoções cruzadas simultâneas, quem já foi
+  // removido não remove mais ninguém (no Postgres, uma das duas é refeita e encontra a conta apagada).
+  const allowed = await tx(async () => {
+    if (!(await get('SELECT 1 FROM moderators WHERE id = ?', me))) return false
+    await run('DELETE FROM moderators WHERE id = ?', mid)
+    return true
+  })
+  if (!allowed) return c.json({ error: 'Sua sessão expirou. Entre de novo para continuar.' }, 401)
+  await kickModerator(mid) // console aberto deixa de receber dados do evento
   return c.json({ ok: true })
 })
 
@@ -859,11 +958,11 @@ moderator.post('/auth/password', async (c) => {
     c,
     z.object({ current: z.string().max(200), next: z.string().min(8, 'A nova senha precisa de ao menos 8 caracteres.').max(200) }),
   )
-  if (overLimit(`pw:${me.id}`, 10, 10 * 60_000)) return c.json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' }, 429)
-  const row = get<{ password: string }>('SELECT password FROM moderators WHERE id = ?', me.id)
+  if (await overLimit(`pw:${me.id}`, 10, 10 * 60_000)) return c.json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' }, 429)
+  const row = await get<{ password: string }>('SELECT password FROM moderators WHERE id = ?', me.id)
   if (!row || !(await verifyPassword(input.current, row.password))) return c.json({ error: 'Senha atual incorreta.' }, 400)
-  run('UPDATE moderators SET password = ?, session_epoch = ? WHERE id = ?', await hashPassword(input.next), Date.now(), me.id)
-  kickModerator(me.id) // consoles reconectam: só os da sessão atual voltam (cookie novo)
+  await run('UPDATE moderators SET password = ?, session_epoch = ? WHERE id = ?', await hashPassword(input.next), Date.now(), me.id)
+  await kickModerator(me.id) // consoles reconectam: só os da sessão atual voltam (cookie novo)
   await startModeratorSession(c, me.id)
   return c.json({ ok: true })
 })

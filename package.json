@@ -7,7 +7,10 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.4",
+    "@libsql/client": "0.18.0",
+    "@vercel/blob": "2.8.2",
     "hono": "4.13.13",
+    "postgres": "3.4.9",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -36,9 +39,11 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "build:vercel": "node scripts/vercel-build.ts",
     "start": "NODE_ENV=production node server/index.ts",
     "check": "tsc -p . && tsc -p server",
     "test": "node --test --test-concurrency=4 'server/**/*.test.ts' 'shared/**/*.test.ts' 'src/**/*.test.ts' 'scripts/**/*.test.ts'",
+    "test:pg": "node --test --test-force-exit --test-concurrency=4 'server/**/*.test.ts'",
     "test:coverage": "node --test --test-concurrency=4 --experimental-test-coverage --test-coverage-include='server/**/*.ts' --test-coverage-include='shared/**/*.ts' --test-coverage-include='src/lib/**/*.ts' --test-coverage-exclude='**/*.test.ts' --test-coverage-exclude='server/tests/**' 'server/**/*.test.ts' 'shared/**/*.test.ts' 'src/**/*.test.ts'",
     "test:e2e": "vite build && node --test --test-concurrency=1 'e2e/**/*.test.ts'",
     "seed": "node server/seed.ts",

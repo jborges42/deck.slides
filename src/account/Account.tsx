@@ -16,7 +16,9 @@ export default function Account() {
   const { me, reload } = useStaff()
   const sessions = useLoad<SessionInfo[]>('/account/sessions')
   // /conta#duas-etapas (vindo da administração): a rolagem fica no Page, então rola até a seção.
-  useEffect(() => document.getElementById(location.hash.slice(1))?.scrollIntoView(), [])
+  useEffect(() => {
+    document.getElementById(location.hash.slice(1))?.scrollIntoView() // em bloco: no Chrome novo devolve uma Promise
+  }, [])
 
   return (
     <Page title="Minha conta" description="Seus dados, senha, verificação em duas etapas e aparelhos com acesso à conta.">

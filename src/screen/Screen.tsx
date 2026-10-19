@@ -7,7 +7,7 @@ import { Link, useParams } from 'react-router'
 import { PlayIcon } from '@phosphor-icons/react/Play'
 import { post } from '../lib/api.ts'
 import { useStream, type StreamStatus } from '../lib/stream.ts'
-import { Button, buttonClass, cx } from '../ui'
+import { BrandFooter, Button, buttonClass, cx } from '../ui'
 import { Stage } from '../stage/Stage.tsx'
 import { group } from '../stage/lib.ts'
 import type { ScreenSnapshot } from '../../shared/types.ts'
@@ -102,7 +102,7 @@ function Live({ url, show, onLost }: { url: string; show: Show; onLost?: () => v
   if (!onLost && status === 'denied')
     return (
       <Panel>
-        <h1 className="text-page font-semibold text-fg">Entre para abrir esta tela</h1>
+        <h1 className="font-heading text-page font-semibold text-fg">Entre para abrir esta tela</h1>
         <p className="text-read text-fg-muted">
           Este endereço usa a sessão do console. Entre neste navegador ou conecte o computador da projeção por código.
         </p>
@@ -119,7 +119,7 @@ function Live({ url, show, onLost }: { url: string; show: Show; onLost?: () => v
   if (!onLost && status === 'gone')
     return (
       <Panel>
-        <h1 className="text-page font-semibold text-fg">Evento encerrado</h1>
+        <h1 className="font-heading text-page font-semibold text-fg">Evento encerrado</h1>
         <p className="text-read text-fg-muted">A organização excluiu este evento. Você pode fechar esta janela.</p>
       </Panel>
     )
@@ -127,17 +127,17 @@ function Live({ url, show, onLost }: { url: string; show: Show; onLost?: () => v
     return (
       <Panel>
         <p className="text-ui text-fg-muted">Tela do evento</p>
-        <h1 className="min-h-8 text-event font-semibold text-balance text-fg">{name}</h1>
+        <h1 className="min-h-8 font-heading text-event font-semibold text-balance text-fg">{name}</h1>
         <p className="text-read text-fg-muted">Abre em tela cheia, com som liberado, e mantém a tela ligada. A tecla F alterna a tela cheia.</p>
         <StartButton onClick={show.start} />
       </Panel>
     )
   // Antes do primeiro snapshot: só o fundo, sem indicador piscando.
-  if (!snap) return <main className={cx('fixed inset-0 bg-canvas', show.idle && 'cursor-none')} />
+  if (!snap) return <main className={cx('fixed inset-0 bg-black', show.idle && 'cursor-none')} />
 
   const { event, program } = snap
   return (
-    <main className={cx('fixed inset-0 bg-canvas', show.idle && 'cursor-none')}>
+    <main className={cx('fixed inset-0 bg-black', show.idle && 'cursor-none')}>
       <Stage
         mode="screen"
         theme={event.theme}
@@ -221,7 +221,7 @@ function Pairing({ show, onPaired }: { show: Show; onPaired: () => void }) {
     }
   }, [onPaired])
 
-  if (!code && !failed) return <main className="fixed inset-0 bg-canvas" />
+  if (!code && !failed) return <main className="on-brand fixed inset-0" />
   return (
     <Panel idle={show.idle}>
       <p className="text-ui text-fg-muted">Conectar esta tela</p>
@@ -244,8 +244,11 @@ function Pairing({ show, onPaired }: { show: Show; onPaired: () => void }) {
 
 function Panel({ children, idle }: { children: ReactNode; idle?: boolean }) {
   return (
-    <main className={cx('grid min-h-dvh place-items-center bg-canvas p-8', idle && 'cursor-none')}>
-      <div className="flex w-full max-w-xl flex-col items-start gap-3">{children}</div>
+    <main className={cx('on-brand flex min-h-dvh flex-col', idle && 'cursor-none')}>
+      <div className="grid flex-1 place-items-center p-8">
+        <div className="flex w-full max-w-xl flex-col items-start gap-3">{children}</div>
+      </div>
+      <BrandFooter negative plain />
     </main>
   )
 }

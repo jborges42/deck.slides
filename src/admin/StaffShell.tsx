@@ -5,7 +5,7 @@ import { NavLink, Outlet, useOutletContext } from 'react-router'
 import { CaretDownIcon } from '@phosphor-icons/react/CaretDown'
 import { SignOutIcon } from '@phosphor-icons/react/SignOut'
 import { api, ApiError, post } from '../lib/api.ts'
-import { Button, Empty, Menu, Spinner, cx, notify } from '../ui'
+import { BrandFooter, Button, Empty, Menu, Spinner, cx, notify } from '../ui'
 import { Mark, message } from '../moderator/setup/kit.tsx'
 import type { Me } from '../../shared/admin.ts'
 
@@ -66,7 +66,7 @@ export default function StaffShell() {
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-5 border-b border-line bg-surface px-4">
+      <header className="on-brand flex h-12 shrink-0 items-center gap-5 px-4">
         <Mark />
         <span className="h-5 w-px bg-line" aria-hidden />
         <nav className="flex h-full items-stretch gap-4" aria-label="Seções do console">
@@ -100,6 +100,7 @@ export default function StaffShell() {
       <main className="min-h-0 flex-1">
         <Outlet context={{ me, reload } satisfies Staff} />
       </main>
+      <BrandFooter />
     </div>
   )
 }

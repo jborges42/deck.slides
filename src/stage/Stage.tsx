@@ -8,8 +8,8 @@
 // cena ou tela de espera · logo e rodapé · sobreposições (entrada, reações) · preto da tela de espera.
 import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import { CANVAS, eventPalette, fontVars, loadThemeFonts, tokenVars } from '../lib/theme.ts'
-import { cx } from '../ui'
-import { amberOn, safeOf, u } from './lib.ts'
+import { BrandStrip, cx } from '../ui'
+import { BRAND, BRAND_FONT, BRAND_W, amberOn, safeOf, u } from './lib.ts'
 import { JoinBand, Reactions, bandHeight } from './overlays.tsx'
 import { Crossfade, SceneView, type Box } from './scenes.tsx'
 import type { LiveState, PublicQuestion, ReactionKind, Scene, Theme } from '../../shared/types.ts'
@@ -27,7 +27,7 @@ export interface StageProps {
   /** Curtidas ao vivo por pergunta (vindas de `counts.likes`); sobrepõem `questions[].likes`. */
   likes?: Record<string, number>
   /** Cronômetro, vídeo e sobreposições. O cronômetro só vale para a cena se `timer.sceneId === scene.id`. */
-  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'transition'>
+  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'transition' | 'slides'>
   /** Tela de espera ativa (tecla B). Só faz sentido no telão e no monitor No ar. */
   standby: boolean
   /** Totais de reações da cena exibida; aumentos entre renders viram animação. */
@@ -68,8 +68,9 @@ function layout(theme: Theme, scene: Scene | null): Layout {
   const at = theme.logo ? theme.logoPosition : 'none'
   // Rodapé só em cenas de texto: sobre imagem, vídeo ou página ele ficaria sem contraste garantido.
   const footer = !!theme.footer.trim() && (scene?.type === 'title' || scene?.type === 'questions' || scene?.type === 'timer')
-  const row = Math.max(at.startsWith('bottom') ? theme.logoSize : 0, footer ? FOOTER * theme.scale * 1.3 : 0)
-  return { side: safe, top: safe + (at.startsWith('top') ? theme.logoSize + GAP : 0), bottom: safe + (row ? row + GAP : 0), footer }
+  // A linha de baixo sempre existe: o logo da marca fica nela em toda cena.
+  const row = Math.max(at.startsWith('bottom') ? theme.logoSize : 0, footer ? FOOTER * theme.scale * 1.3 : 0, BRAND)
+  return { side: safe, top: safe + (at.startsWith('top') ? theme.logoSize + GAP : 0), bottom: safe + row + GAP, footer }
 }
 
 /**
@@ -109,8 +110,10 @@ export function Stage(props: StageProps) {
   const box = layout(theme, black ? scene : shown) // sob o preto, a cena guarda o próprio layout: nada pula ao voltar
   const join = !thumb && live.overlays.join && !black
   const band = bandHeight(theme, !!props.joinUrl)
-  // Com a faixa de entrada visível, o texto da cena termina acima dela (e o aviso de "não cabe" passa a valer).
-  const sceneBox = join ? { ...box, bottom: Math.max(box.bottom, band + GAP) } : box
+  // Faixa da marca: na margem de segurança ou, com a faixa de entrada visível, logo acima dela.
+  const brand = join ? band + 24 : safeOf(theme)
+  // Com a faixa de entrada visível, o texto da cena termina acima dela e da marca (e o aviso de "não cabe" passa a valer).
+  const sceneBox = join ? { ...box, bottom: Math.max(box.bottom, brand + BRAND + GAP) } : box
 
   const view = (s: Scene) => (
     <SceneView
@@ -131,7 +134,7 @@ export function Stage(props: StageProps) {
     ? [scene?.id ?? 'none', scene && view(scene)]
     : shown
       ? [shown.id, view(shown)]
-      : ['standby', <BrandStandby theme={theme} name={props.eventName} bottom={join ? band + GAP : safeOf(theme)} />]
+      : ['standby', <BrandStandby theme={theme} name={props.eventName} bottom={brand + BRAND + GAP} />]
 
   return (
     <div
@@ -174,9 +177,16 @@ export function Stage(props: StageProps) {
             totals={props.reactions}
             enabled={props.enabledReactions}
             sceneId={shown.id}
-            bottom={join ? band + 24 : box.bottom}
+            bottom={join ? brand + BRAND + 24 : box.bottom}
           />
         )}
+        {/* Marca fixa em toda cena e na tela de espera; a tela de espera preta cobre. */}
+        <BrandStrip
+          stacked
+          negative={palette.mode === 'dark'}
+          className="pointer-events-none absolute"
+          style={{ right: u(safeOf(theme)), bottom: u(brand), fontSize: u(BRAND_FONT), transition: `bottom ${thumb ? 0 : 300}ms linear` }}
+        />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-black"
@@ -205,7 +215,7 @@ function Chrome({ theme, box, show, ms }: { theme: Theme; box: Layout; show: boo
     />
   )
   // Rodapé numa linha: texto longo reduz a fonte (estimativa de 0,55 em por caractere) antes de chegar às reticências.
-  const width = CANVAS[theme.aspect].w - 2 * safe - (bottom ? theme.logoSize * 3 + GAP : 0)
+  const width = CANVAS[theme.aspect].w - 2 * safe - BRAND_W - GAP - (bottom ? theme.logoSize * 3 + GAP : 0)
   const size = Math.max(24, Math.min(FOOTER * theme.scale, width / (Math.max(text.length, 1) * 0.55)))
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0" style={{ opacity: show ? 1 : 0, transition: `opacity ${ms}ms linear` }}>
@@ -217,7 +227,7 @@ function Chrome({ theme, box, show, ms }: { theme: Theme; box: Layout; show: boo
       {(bottom || text) && (
         <div
           className={cx('absolute flex items-end', at === 'bottom-right' && 'flex-row-reverse')}
-          style={{ left: u(safe), right: u(safe), bottom: u(safe), gap: u(GAP) }}
+          style={{ left: u(safe), right: u(safe + BRAND_W + GAP), bottom: u(safe), gap: u(GAP) }}
         >
           {bottom && logo}
           {text && (

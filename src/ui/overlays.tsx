@@ -10,8 +10,9 @@ import { XIcon } from '@phosphor-icons/react/X'
 import { Button, IconButton, cx } from './controls.tsx'
 import { Kbd } from './display.tsx'
 
+// Sobreposição sem sombra: no claro, "subir" é ficar branca com borda firme (raised escurece: é seleção).
 const popupClass =
-  'rounded-control border border-line bg-raised text-fg transition-[opacity,transform] duration-150 ease-out data-[ending-style]:opacity-0 data-[starting-style]:opacity-0'
+  'rounded-control border border-line-strong/50 bg-canvas text-fg transition-[opacity,transform] duration-150 ease-out data-[ending-style]:opacity-0 data-[starting-style]:opacity-0'
 
 // ---------- diálogo ----------
 
@@ -257,10 +258,10 @@ function ToastList() {
       key={t.id}
       toast={t}
       className={cx(
-        'absolute right-0 bottom-0 flex w-full items-start gap-3 rounded-control border bg-raised px-3 py-2.5',
+        'absolute right-0 bottom-0 flex w-full items-start gap-3 rounded-control border bg-canvas px-3 py-2.5',
         'transition-[opacity,transform] duration-200 ease-out data-[ending-style]:opacity-0 data-[starting-style]:translate-y-2 data-[starting-style]:opacity-0',
         '[transform:translateY(calc(var(--toast-index)*-8px))] data-[expanded]:[transform:translateY(calc(var(--toast-offset-y)*-1))]',
-        t.type === 'critical' ? 'border-critical' : 'border-line',
+        t.type === 'critical' ? 'border-critical' : 'border-line-strong/50',
       )}
     >
       <Toast.Content className="min-w-0 flex-1">

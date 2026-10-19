@@ -137,6 +137,10 @@ O núcleo já está escrito e testado em `server/security/` e os contratos estã
 
 As telas de administração e de "Minha conta" estão em `src/admin` e `src/account`.
 
+## Créditos
+
+Emojis das reações: [Twemoji](https://github.com/jdecked/twemoji), de Twitter, Inc. e colaboradores, licença CC-BY 4.0 (gráficos). Fontes: Poppins (OFL) e Spline Sans Mono (OFL), servidas pelo app. Conversão de PDF em slides: [pdf.js](https://mozilla.github.io/pdf.js/) (Apache 2.0).
+
 ## Solução de problemas
 
 **A tela mostra "Iniciar exibição".** É de propósito: o navegador só libera tela cheia, som e tela sempre ligada depois de um clique. Clique uma vez no computador da projeção; ao recarregar a página, o portão volta.

@@ -4,12 +4,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { FilmStripIcon } from '@phosphor-icons/react/FilmStrip'
 import { GlobeIcon } from '@phosphor-icons/react/Globe'
 import { ImageIcon } from '@phosphor-icons/react/Image'
+import { PresentationIcon } from '@phosphor-icons/react/Presentation'
 import { ThumbsUpIcon } from '@phosphor-icons/react/ThumbsUp'
 import { useNow } from '../lib/stream.ts'
 import { CANVAS } from '../lib/theme.ts'
 import { cx } from '../ui'
 import { card, timerFace, u, type TimerFace, type TimerSpec } from './lib.ts'
-import { playbackPosition, timerElapsed, type PublicQuestion, type Scene, type SceneContent, type Theme } from '../../shared/types.ts'
+import { QrTile } from './overlays.tsx'
+import { playbackPosition, slideIndex, timerElapsed, type PublicQuestion, type Scene, type SceneContent, type Theme } from '../../shared/types.ts'
 import type { StageProps } from './Stage.tsx'
 
 /** Área do texto, em unidades do canvas. */
@@ -86,7 +88,8 @@ const visible = (c: SceneContent<'questions'>, qs: PublicQuestion[]) =>
   qs.slice(0, c.layout === 'spotlight' ? 1 : Math.min(Math.max(c.max, 1), 6))
 
 /** O que, ao mudar dentro da mesma cena, troca em fusão. Curtidas e algarismos do cronômetro mudam no lugar. */
-function contentKey({ scene, questions }: SceneProps): string {
+function contentKey(p: SceneProps): string {
+  const { scene, questions } = p
   switch (scene.type) {
     case 'questions':
       return JSON.stringify([scene.content.layout, scene.content.title, visible(scene.content, questions).map((q) => [q.id, q.text, q.author])])
@@ -96,6 +99,8 @@ function contentKey({ scene, questions }: SceneProps): string {
       return scene.content.src
     case 'embed':
       return scene.content.url
+    case 'slides':
+      return scene.content.slides[slideIndex(p.live, scene)] ?? '' // cada slide entra em fusão
     default:
       return JSON.stringify(scene.content)
   }
@@ -116,9 +121,11 @@ export function SceneView(p: SceneProps) {
         <EmbedScene {...p} content={scene.content} />
       ) : scene.type === 'questions' ? (
         <QuestionsScene {...p} content={scene.content} />
-      ) : (
+      ) : scene.type === 'slides' ? (
+        <SlidesScene {...p} content={scene.content} />
+      ) : scene.type === 'timer' ? (
         <TimerScene {...p} content={scene.content} />
-      )}
+      ) : null /* pasta: nunca vai para a tela */}
     </Crossfade>
   )
 }
@@ -265,6 +272,34 @@ function ImageScene({ content, theme, box, mode }: With<'image'>) {
   )
 }
 
+// ---------- apresentação ----------
+
+/**
+ * Slide atual inteiro, contido na área acima da linha de baixo (a marca fixa nunca cobre o slide; com a faixa
+ * de entrada, fica acima dela também). No telão, os vizinhos ficam pré-carregados: passar o slide não pisca.
+ */
+function SlidesScene({ scene, content, live, box, mode }: With<'slides'>) {
+  const i = slideIndex(live, { id: scene.id, content })
+  const src = content.slides[i]
+  useEffect(() => {
+    if (mode !== 'screen') return
+    for (const n of [i + 1, i + 2, i - 1]) if (content.slides[n]) new Image().src = content.slides[n]
+  }, [mode, i, content.slides])
+  if (!src) return mode !== 'screen' && <Placeholder icon={<PresentationIcon size="1em" weight="bold" />} label="Sem slides" />
+  return (
+    <div className="absolute inset-x-0 top-0" style={{ bottom: u(box.bottom - 24) }}>
+      <img
+        src={src}
+        alt={`Slide ${i + 1} de ${content.slides.length}`}
+        draggable={false}
+        decoding="async"
+        loading={mode === 'thumb' ? 'lazy' : undefined}
+        className="size-full object-contain"
+      />
+    </div>
+  )
+}
+
 // ---------- vídeo ----------
 
 function VideoScene({ scene, content, live, offset, mode }: With<'video'>) {
@@ -341,8 +376,9 @@ function urlOf(s: string): URL | null {
 }
 
 /** Só o telão carrega a página. No console, um aviso calmo com o endereço (monitores e miniaturas ficam leves). */
-function EmbedScene({ content, mode }: With<'embed'>) {
+function EmbedScene({ content, mode, theme, box }: With<'embed'>) {
   const url = urlOf(content.url)
+  if (url && content.display === 'link') return <LinkView url={url} theme={theme} box={box} />
   if (mode !== 'screen') return <Placeholder icon={<GlobeIcon size="1em" weight="bold" />} label={url?.host ?? 'Sem endereço'} />
   if (!url) return null
   return (
@@ -357,6 +393,25 @@ function EmbedScene({ content, mode }: With<'embed'>) {
       // O app manda "same-origin"; players como o YouTube recusam incorporar sem a origem de quem incorpora.
       referrerPolicy="strict-origin-when-cross-origin"
     />
+  )
+}
+
+/** Site que não abre dentro de outra página: endereço e QR code para o público abrir no celular. */
+function LinkView({ url, theme, box }: { url: URL; theme: Theme; box: Box }) {
+  const s = theme.scale
+  const short = `${url.host}${url.pathname}${url.search}`.replace(/^www\./, '').replace(/\/$/, '')
+  return (
+    <div className={cx('absolute flex items-center', theme.align === 'center' && 'justify-center')} style={{ ...area(box), gap: u(72) }}>
+      <QrTile value={url.href} size={420} radius={Math.min(theme.radius, 24)} label={`QR code de ${url.host}`} />
+      <div className="flex min-w-0 flex-col font-body" style={{ gap: u(20) }}>
+        <p className="text-fg-muted" style={{ fontSize: u(48 * s), lineHeight: 1.25 }}>
+          Acesse pelo celular
+        </p>
+        <p className="font-semibold text-fg wrap-anywhere" style={{ fontSize: u(72 * s), lineHeight: 1.15, maxWidth: u(1100) }}>
+          {short}
+        </p>
+      </div>
+    </div>
   )
 }
 

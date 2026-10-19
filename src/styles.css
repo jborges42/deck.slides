@@ -1,8 +1,10 @@
 @import 'tailwindcss' source('.');
 
 /*
-  Sistema visual "sala de controle". Regras completas em DESIGN.md.
+  Sistema visual na identidade do Conexão Profissional 2026 (SENAI Fraiburgo). Regras completas em DESIGN.md.
   - A paleta padrão do Tailwind foi apagada: só existem os tokens abaixo.
+  - Cores oficiais: Azul SENAI #004098 (ação principal, seleção, foco), Laranja SENAI #E8490F (só no logo),
+    Grafite #221F1F (texto) e Branco (fundo). Os cinzas quentes vêm do manual (#E5E1DC, #5B5754).
   - O mesmo vocabulário de tokens vale para o console, o celular e a tela do evento.
     O console usa os valores de :root; celular e tela redefinem as variáveis com a paleta
     gerada a partir da marca do evento (shared/screen-theme.ts).
@@ -24,7 +26,9 @@
   --animate-*: initial;
   --ease-*: initial;
 
-  --font-ui: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  /* manual: texto de apoio em Univers/Helvetica Neue (Arial como alternativa); títulos em Futura/Century Gothic (Poppins) */
+  --font-ui: 'Helvetica Neue', Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-brand: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-code: 'Spline Sans Mono Variable', ui-monospace, monospace;
 
   /* console (denso) */
@@ -47,8 +51,6 @@
   --text-head--line-height: 26px;
   --text-event: 28px;
   --text-event--line-height: 32px;
-
-  --font-weight-book: 450;
 
   --tracking-tight: -0.01em;
 
@@ -85,36 +87,59 @@
   --color-white: #fff;
   --color-black: #000;
 
-  /* fontes do evento (tela e celular); fora delas, a fonte da interface */
-  --font-heading: var(--heading-family, var(--font-ui));
+  /* fontes do evento (tela e celular); fora delas, a da marca nos títulos e a da interface no resto */
+  --font-heading: var(--heading-family, var(--font-brand));
   --font-body: var(--body-family, var(--font-ui));
   --font-numbers: var(--numbers-family, var(--font-ui));
 }
 
 :root {
-  /* console: grafite quente, só escuro (uso em cabine com pouca luz) */
-  --canvas: #1f1e1b;
-  --surface: #272522;
-  --raised: #302d2a;
-  --line: #423f3c;
-  --line-strong: #7f7b76; /* 3,26:1 sobre raised */
-  --fg: #f0eeec; /* 11,8:1 sobre raised */
-  --fg-muted: #bdbab6; /* 7,08:1 sobre raised */
-  --fg-subtle: #9d9a95; /* 4,88:1 sobre raised */
-  --accent: #f0eeec; /* ação principal neutra: preenchimento claro, texto escuro */
-  --on-accent: #1f1e1b;
-  --accent-fg: #f0eeec;
-  --accent-soft: #302d2a;
-  --critical: #ff7b6e; /* erro e exclusão; 5,42:1 sobre raised */
+  /* console: claro, nas cores do manual. Elevação por luminosidade: superfícies escurecem em direção ao texto. */
+  --canvas: #ffffff;
+  --surface: #f8f7f6;
+  --raised: #f0eeec;
+  --line: #e5e1dc; /* borda do manual */
+  --line-strong: #8a847f; /* 3,19:1 sobre raised */
+  --fg: #221f1f; /* grafite; 14,1:1 sobre raised */
+  --fg-muted: #5b5754; /* texto secundário do manual; 6,18:1 sobre raised */
+  --fg-subtle: #6e6964; /* 4,69:1 sobre raised */
+  --accent: #004098; /* Azul SENAI: ação principal, seleção, foco */
+  --on-accent: #ffffff; /* 9,6:1 */
+  --accent-fg: #004098;
+  --accent-soft: #e6edf8;
+  --critical: #b8241b; /* erro e exclusão; 5,49:1 sobre raised */
+  --focus: #004098;
 
-  /* sinais de transmissão: só estado, nunca decoração */
-  --program: #eb443e; /* no ar: moldura e preenchimento (não usar como texto) */
+  /* sinais de transmissão: só estado, nunca decoração. O laranja da marca não é sinal: fica no logo. */
+  --program: #e0332c; /* no ar: moldura e preenchimento (não usar como texto) */
   --program-strong: #cc2827; /* chip "No ar" com texto branco, 5,38:1 */
-  --preview: #47c86e; /* prévia */
-  --attention: #fabb41; /* aguardando, conexão instável */
-  --on-signal: #14110d; /* texto sobre preview/attention */
+  --preview: #137a3a; /* prévia; texto branco 5,42:1 */
+  --attention: #9a5200; /* aguardando, conexão instável; texto branco 5,86:1 e 5,07:1 como texto sobre raised */
+  --on-signal: #ffffff; /* texto sobre preview/attention */
 
-  color-scheme: dark;
+  color-scheme: light;
+}
+
+/*
+  Faixa na cor da marca (versão negativa do manual): barras superiores do console.
+  Os mesmos tokens redefinidos sobre o azul; menus e dicas abertos dali voltam aos valores de :root (portal).
+*/
+@utility on-brand {
+  --canvas: #003682;
+  --surface: #004098;
+  --raised: #0c4ca8;
+  --line: #3366ad;
+  --line-strong: #7fa0d4; /* 3,01:1 sobre raised */
+  --fg: #ffffff; /* 8,03:1 sobre raised */
+  --fg-muted: #c9d7ee; /* 5,52:1 sobre raised */
+  --fg-subtle: #afc4e8; /* 4,54:1 sobre raised */
+  --accent: #ffffff;
+  --on-accent: #004098;
+  --focus: #ffffff;
+  --attention: #fabb41; /* âmbar claro: sobre o azul, o escuro de :root some */
+  --on-signal: #14110d;
+  background-color: var(--surface);
+  color: var(--fg);
 }
 
 @layer base {
@@ -122,7 +147,6 @@
     background: var(--canvas);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-weight: 450;
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -140,7 +164,7 @@
     isolation: isolate;
   }
   ::selection {
-    background: color-mix(in oklab, var(--fg) 28%, transparent);
+    background: color-mix(in oklab, var(--accent-fg, var(--fg)) 24%, transparent);
   }
   :focus-visible {
     outline: 2px solid var(--focus, var(--fg));
@@ -177,6 +201,18 @@
   &:active:not(:disabled),
   &[data-pressed]:active {
     background-color: color-mix(in oklab, currentColor 12%, var(--state-bg, transparent));
+  }
+}
+
+/*
+  Some quando o teclado do celular encolhe a janela (campo focado e pouca altura): grudado sobre o teclado,
+  o rodapé esmagaria o campo. Com a janela inteira (campo com foco automático na chegada), continua visível.
+*/
+@utility hide-while-typing {
+  @media (max-height: 560px) {
+    body:has(:is(input, textarea):focus) & {
+      display: none;
+    }
   }
 }
 

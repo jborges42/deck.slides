@@ -47,7 +47,7 @@ export function MfaStep({ onDone, onCancel, className }: MfaStepProps) {
 
   return (
     <div className={className}>
-      <h1 className="text-page font-semibold">Verificação em duas etapas</h1>
+      <h1 className="font-heading text-page font-semibold">Verificação em duas etapas</h1>
       <p className="mt-1.5 text-ui text-fg-muted">
         {recovery
           ? 'Digite um dos códigos de recuperação que você guardou. Cada código funciona uma vez.'

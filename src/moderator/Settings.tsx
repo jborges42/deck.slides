@@ -12,7 +12,7 @@ import { ago } from '../lib/format.ts'
 import { Button, Code, Dot, Field, Input, Segmented, Select, Switch, Textarea, buttonClass, confirm, cx, inputClass, notify } from '../ui'
 import { run, useEvent } from './context.ts'
 import { Page, copy, message } from './setup/kit.tsx'
-import { REACTION } from '../lib/reactions.ts'
+import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
 import { REACTIONS, normalize, publicAuthor, type EventSettings, type ScreenInfo } from '../../shared/types.ts'
 
 type Save = (body: { name?: string; pin?: string; settings?: Partial<EventSettings> }) => Promise<boolean>
@@ -124,7 +124,7 @@ export default function Settings() {
           <div className="flex flex-wrap gap-2">
             {REACTIONS.map((r) => {
               const on = s.reactions.includes(r)
-              const { label, Icon } = REACTION[r]
+              const { label } = REACTION[r]
               return (
                 <button
                   key={r}
@@ -134,9 +134,9 @@ export default function Settings() {
                     if (on && s.reactions.length === 1) return void notify('Mantenha pelo menos uma reação.')
                     set({ reactions: REACTIONS.filter((k) => (k === r ? !on : s.reactions.includes(k))) })
                   }}
-                  className="state-layer inline-flex h-8 items-center gap-1.5 rounded-control border border-line px-2.5 text-ui font-medium text-fg-subtle aria-pressed:border-line-strong aria-pressed:text-fg aria-pressed:[--state-bg:var(--raised)]"
+                  className="state-layer inline-flex h-8 items-center gap-1.5 rounded-control border border-line px-2.5 text-ui font-medium text-fg-subtle aria-pressed:border-accent aria-pressed:text-accent-fg aria-pressed:[--state-bg:var(--accent-soft)]"
                 >
-                  <Icon weight={on ? 'fill' : 'regular'} />
+                  <ReactionEmoji kind={r} className={cx('text-[16px]', !on && 'opacity-50 grayscale')} />
                   {label}
                 </button>
               )
@@ -213,7 +213,7 @@ export default function Settings() {
 function Section({ title, description, children }: { title: string; description?: ReactNode; children: ReactNode }) {
   return (
     <section className="border-t border-line pt-6 pb-9">
-      <h2 className="text-title font-semibold">{title}</h2>
+      <h2 className="font-heading text-title font-semibold">{title}</h2>
       {description && <p className="mt-1 max-w-[64ch] text-ui text-fg-muted">{description}</p>}
       <div className="mt-5 flex max-w-[640px] flex-col gap-6">{children}</div>
     </section>

@@ -5,7 +5,7 @@ import { Field as BaseField } from '@base-ui/react/field'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { ApiError } from '../lib/api.ts'
 import { contrast, eventPalette, fontVars, loadFont, tokenVars } from '../lib/theme.ts'
-import { Button, Input, Spinner, cx } from '../ui'
+import { BrandFooter, BrandIcon, Button, Input, Spinner, cx } from '../ui'
 import { DEFAULT_THEME, type Theme } from '../../shared/types.ts'
 
 /** Marca do evento: vem do convite, do link aberto ou do snapshot. */
@@ -75,20 +75,30 @@ export function PhonePage({ brand, title, top, children }: { brand?: Brand | nul
   }, [title])
 
   return (
-    <div className="min-h-dvh bg-canvas text-body text-fg">
+    <div className="flex min-h-dvh flex-col bg-canvas text-body text-fg">
       {top}
-      <main className="mx-auto flex w-full max-w-[560px] flex-col pt-[max(1.5rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
+      <main className="mx-auto flex w-full max-w-[560px] flex-1 flex-col pt-[max(1.5rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
         {children}
       </main>
+      {/* Enquanto o teclado ocupa a tela, o rodapé sai (ver hide-while-typing em styles.css). */}
+      <BrandFooter negative={mode === 'dark'} className="hide-while-typing" />
     </div>
   )
 }
 
-/** Logo e nome do evento (fonte de títulos do tema). */
+/**
+ * Logo e nome do evento (fonte de títulos do tema). Sem logo enviado, o ícone da marca (negativo no modo escuro).
+ * 56 px de altura: um logo horizontal (3:1) chega aos 160 px de largura mínima do manual da marca.
+ */
 export function EventHeader({ name, logo, size = 'event', children }: { name: string; logo?: string | null; size?: 'event' | 'head'; children?: ReactNode }) {
+  const dark = useMedia('(prefers-color-scheme: dark)')
   return (
     <header className="flex flex-col gap-3">
-      {logo && <img src={logo} alt="" className="h-10 w-auto max-w-48 self-start object-contain object-left" />}
+      {logo ? (
+        <img src={logo} alt="" className="h-14 w-auto max-w-64 self-start object-contain object-left" />
+      ) : (
+        <BrandIcon size={40} negative={dark} />
+      )}
       <div className="flex flex-col gap-1">
         <h1 className={cx('font-heading [font-weight:var(--heading-weight,650)] text-balance wrap-anywhere', size === 'event' ? 'text-event' : 'text-head')}>{name}</h1>
         {children}
@@ -101,7 +111,7 @@ export function EventHeader({ name, logo, size = 'event', children }: { name: st
 export function Notice({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-start gap-2 pt-6">
-      <h1 className="text-head font-semibold text-balance">{title}</h1>
+      <h1 className="font-heading text-head font-semibold text-balance">{title}</h1>
       {children && <p className="text-fg-muted">{children}</p>}
       {action && <div className="mt-4 w-full">{action}</div>}
     </div>
@@ -150,7 +160,7 @@ export function PhoneField({ label, aside, hint, error, children }: { label: str
   )
 }
 
-/** Interruptor com a linha inteira tocável (48 px). Estado neutro, como no console. */
+/** Interruptor com a linha inteira tocável (48 px). Ligado na cor de destaque, como no console. */
 export function PhoneSwitch({ checked, onChange, label, description }: { checked: boolean; onChange: (checked: boolean) => void; label: string; description?: ReactNode }) {
   return (
     <BaseField.Root className="flex flex-col">
@@ -159,9 +169,9 @@ export function PhoneSwitch({ checked, onChange, label, description }: { checked
         <BaseSwitch.Root
           checked={checked}
           onCheckedChange={(v) => onChange(v)}
-          className="relative inline-flex h-7 w-12 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-150 data-[checked]:bg-fg"
+          className="relative inline-flex h-7 w-12 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-150 data-[checked]:bg-accent"
         >
-          <BaseSwitch.Thumb className="block size-6 translate-x-0.5 rounded-full bg-canvas transition-transform duration-150 ease-out data-[checked]:translate-x-[22px]" />
+          <BaseSwitch.Thumb className="block size-6 translate-x-0.5 rounded-full bg-canvas transition-transform duration-150 ease-out data-[checked]:translate-x-[22px] data-[checked]:bg-on-accent" />
         </BaseSwitch.Root>
       </BaseField.Label>
       {description && <BaseField.Description className="text-fg-muted">{description}</BaseField.Description>}
@@ -197,7 +207,7 @@ export function PinInput({ value, onChange, onComplete, length, readOnly, autoFo
           className={cx(
             'grid h-14 min-w-0 flex-1 place-items-center rounded-control border font-code text-event tabular-nums group-data-[invalid]:border-critical',
             selected && i < value.length ? 'border-fg bg-raised' : 'border-line-strong bg-canvas',
-            !selected && i === active && 'group-data-[focused]:outline-2 group-data-[focused]:-outline-offset-1 group-data-[focused]:outline-fg',
+            !selected && i === active && 'group-data-[focused]:outline-2 group-data-[focused]:-outline-offset-1 group-data-[focused]:outline-(--focus)',
           )}
         >
           {value[i]}

@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
 import { del, head } from '@vercel/blob'
 import { all, batch, get, newCode, newId, newPin, run, tx, UPLOADS_DIR } from './db.ts'
+import { checkEmbed } from './embed.ts'
 import { claimPairing, kick, kickModerator, kickScreen, publish, publishCounts, stream } from './hub.ts'
 import { eventRow, mediaRow, nextPosition, question, scene, scenes, toEventInfo, toMedia, updateLive, type EventRow } from './model.ts'
 import { hashPassword, overLimit, requireModerator, verifyPassword, startModeratorSession, type Env } from './auth.ts'
@@ -19,6 +20,7 @@ import {
   hasFlagWord,
   defaultLive,
   playbackPosition,
+  slideIndex,
   timerElapsed,
   type EventSummary,
   type LiveState,
@@ -103,7 +105,10 @@ const sceneBody = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('embed'),
-    content: z.object({ url: z.url({ protocol: /^https$/, error: 'Use um endereço https.' }).or(z.literal('')) }),
+    content: z.object({
+      url: z.url({ protocol: /^https$/, error: 'Use um endereço https.' }).or(z.literal('')),
+      display: z.enum(['page', 'link']).optional(),
+    }),
   }),
   z.object({
     type: z.literal('questions'),
@@ -127,6 +132,8 @@ const sceneBody = z.discriminatedUnion('type', [
       endText: text(120),
     }),
   }),
+  z.object({ type: z.literal('slides'), content: z.object({ slides: z.array(mediaRef).max(500, 'Uma apresentação tem no máximo 500 slides.') }) }),
+  z.object({ type: z.literal('section'), content: z.object({}) }),
 ])
 
 const liveCommand = z.discriminatedUnion('op', [
@@ -145,6 +152,7 @@ const liveCommand = z.discriminatedUnion('op', [
     .refine((t) => t.action !== 'add' || t.ms !== undefined, 'Informe quanto tempo somar ao cronômetro.')
     .refine((t) => t.action !== 'set' || (t.mode !== undefined && t.durationMs !== undefined), 'Informe o modo e a duração do cronômetro.'),
   z.object({ op: z.literal('playback'), action: z.enum(['play', 'pause', 'restart']) }),
+  z.object({ op: z.literal('slide'), sceneId: z.string().optional(), to: z.enum(['next', 'prev']).or(z.number().int().min(0).max(499)) }),
 ])
 
 z.config(z.locales.ptBR())
@@ -183,6 +191,8 @@ const SCENE_NAMES: Record<Scene['type'], string> = {
   embed: 'Página web',
   questions: 'Perguntas',
   timer: 'Cronômetro',
+  slides: 'Apresentação',
+  section: 'Pasta',
 }
 
 moderator.get('/events', async (c) => {
@@ -322,18 +332,21 @@ moderator.get('/events/:id/stream', (c) =>
 
 moderator.post('/events/:id/scenes', async (c) => {
   const ev = c.get('event')
-  const input = await body(c, z.intersection(z.object({ name: z.string().trim().max(80).optional() }), sceneBody))
-  const id = newId()
-  await run(
-    'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    id,
-    ev.id,
-    await nextPosition(ev.id),
-    input.type,
-    input.name || SCENE_NAMES[input.type],
-    JSON.stringify(input.content),
-    Date.now(),
+  const input = await body(
+    c,
+    z.intersection(z.object({ name: z.string().trim().max(80).optional(), after: z.string().optional() }), sceneBody),
   )
+  const id = newId()
+  // `after`: entra logo depois dessa cena (o "+" de uma pasta); sem ela, ou se ela não existe mais, no fim.
+  const prev = input.after ? await scene(ev.id, input.after) : null
+  const position = prev ? prev.position + 1 : await nextPosition(ev.id)
+  await batch([
+    ...(prev ? [{ sql: 'UPDATE scenes SET position = position + 1 WHERE event_id = ? AND position > ?', args: [ev.id, prev.position] }] : []),
+    {
+      sql: 'INSERT INTO scenes (id, event_id, position, type, name, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, ev.id, position, input.type, input.name || SCENE_NAMES[input.type], JSON.stringify(input.content), Date.now()],
+    },
+  ])
   await publish(ev.id, 'moderator')
   return c.json({ id }, 201)
 })
@@ -393,6 +406,7 @@ moderator.delete('/events/:id/scenes/:sid', async (c) => {
     if (live.program === sid) live.program = null
     if (live.preview === sid) live.preview = null
     if (live.playback.sceneId === sid) live.playback = defaultLive().playback // vídeo apagado sai do ar como num corte
+    delete live.slides[sid]
   })
   await publish(ev.id)
   return c.json({ ok: true })
@@ -438,15 +452,20 @@ moderator.post('/events/:id/live', async (c) => {
   const now = Date.now()
   let programChanged = false
   let error: string | null = null
+  let status: 400 | 404 = 404
   await updateLive(ev.id, async (live) => {
     // A transação pode ser refeita (conflito no Postgres): cada tentativa começa do zero.
     programChanged = false
     error = null
+    status = 404
     switch (cmd.op) {
-      case 'preview':
-        if (cmd.sceneId !== null && !(await scene(ev.id, cmd.sceneId))) error = 'Cena não encontrada.' // "" também não é cena
+      case 'preview': {
+        const s = cmd.sceneId === null ? null : await scene(ev.id, cmd.sceneId)
+        if (cmd.sceneId !== null && !s) error = 'Cena não encontrada.' // "" também não é cena
+        else if (s?.type === 'section') [error, status] = ['Pastas só organizam o roteiro e não vão para a tela. Escolha uma cena.', 400]
         else live.preview = cmd.sceneId
         break
+      }
       case 'take': {
         // Convenção de switcher: prévia e no ar trocam de lugar, então um segundo corte desfaz o primeiro.
         if (!live.preview) {
@@ -507,11 +526,34 @@ moderator.post('/events/:id/live', async (c) => {
         if (cmd.action === 'restart') Object.assign(p, { positionMs: 0, startedAt: now })
         break
       }
+      case 'slide': {
+        // Sem sceneId, passa o slide da apresentação no ar; com ele, escolhe o slide de qualquer apresentação
+        // (na prévia, define de onde ela começa). Cada apresentação guarda o próprio slide.
+        const s = await scene(ev.id, cmd.sceneId ?? live.program)
+        if (!s && cmd.sceneId) error = 'Apresentação não encontrada.'
+        else if (s?.type !== 'slides') [error, status] = [cmd.sceneId ? 'A cena não é uma apresentação.' : 'Nenhuma apresentação no ar.', 400]
+        else {
+          const at = slideIndex(live, s)
+          const to = cmd.to === 'next' ? at + 1 : cmd.to === 'prev' ? at - 1 : cmd.to
+          live.slides[s.id] = Math.max(0, Math.min(to, s.content.slides.length - 1))
+        }
+        break
+      }
     }
   })
-  if (error) return c.json({ error }, 404)
+  if (error) return c.json({ error }, status)
   await publish(ev.id, ...(programChanged ? [] : (['moderator', 'screen'] as const)))
   return c.json({ ok: true })
+})
+
+// ---------- página web ----------
+
+// O site aceita aparecer dentro da tela? O console avisa antes de ir ao ar (e sugere o endereço com QR code).
+moderator.post('/events/:id/embed-check', async (c) => {
+  const { url } = await body(c, z.object({ url: z.url({ protocol: /^https$/, error: 'Use um endereço https.' }).max(2000) }))
+  if (await overLimit(`embed:${c.get('moderator').id}`, 60, 10 * 60_000))
+    return c.json({ error: 'Muitas verificações seguidas. Aguarde alguns minutos e tente de novo.' }, 429)
+  return c.json(await checkEmbed(url))
 })
 
 // ---------- perguntas ----------

@@ -93,7 +93,7 @@ export function IconButton({ label, icon, variant = 'ghost', size = 'md', classN
 /** Visual de campo. Sem largura: Input, Textarea e Select ocupam a linha; quem precisa de outra largura passa a sua. */
 export const inputClass = cx(
   'rounded-control border border-line-strong bg-canvas px-2.5 text-fg',
-  'transition-colors duration-100 hover:border-fg-subtle focus-visible:border-fg focus-visible:outline-none',
+  'transition-colors duration-100 hover:border-fg-subtle focus-visible:border-(--focus) focus-visible:outline-none',
   'disabled:opacity-50 data-[invalid]:border-critical aria-[invalid=true]:border-critical',
 )
 
@@ -179,9 +179,9 @@ export function Switch({ checked, onChange, label, description, disabled, classN
       <BaseSwitch.Root
         checked={checked}
         onCheckedChange={(v) => onChange(v)}
-        className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-line transition-colors duration-150 data-[checked]:bg-fg data-[disabled]:opacity-45"
+        className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-line transition-colors duration-150 data-[checked]:bg-accent data-[disabled]:opacity-45"
       >
-        <BaseSwitch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-fg-muted transition-transform duration-150 ease-out data-[checked]:translate-x-[18px] data-[checked]:bg-canvas" />
+        <BaseSwitch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-fg-muted transition-transform duration-150 ease-out data-[checked]:translate-x-[18px] data-[checked]:bg-on-accent" />
       </BaseSwitch.Root>
     </BaseField.Root>
   )
@@ -211,7 +211,7 @@ export function Select<T extends string>({ value, onChange, options, label, clas
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
         <BaseSelect.Positioner sideOffset={4} alignItemWithTrigger={false} className="z-50 outline-none">
-          <BaseSelect.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-control border border-line bg-raised p-1 text-ui transition-opacity duration-100 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+          <BaseSelect.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-control border border-line-strong/50 bg-canvas p-1 text-ui transition-opacity duration-100 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
             <BaseSelect.List>
               {options.map((o) => (
                 <BaseSelect.Item
@@ -260,7 +260,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, s
           value={o.value}
           className={cx(
             'state-layer inline-flex items-center justify-center gap-1.5 rounded-[4px] px-2.5 font-medium text-fg-muted',
-            'data-[pressed]:text-fg data-[pressed]:[--state-bg:var(--raised)]',
+            'data-[pressed]:text-accent-fg data-[pressed]:[--state-bg:var(--accent-soft)]',
             size === 'sm' ? 'h-6 text-meta' : 'h-7 text-ui',
           )}
         >
@@ -299,10 +299,10 @@ export function Slider({ value, onChange, min, max, step = 1, label, format = St
       </div>
       <BaseSlider.Control className="flex h-4 w-full touch-none items-center select-none">
         <BaseSlider.Track className="h-1 w-full rounded-full bg-line">
-          <BaseSlider.Indicator className="rounded-full bg-fg-muted" />
+          <BaseSlider.Indicator className="rounded-full bg-accent" />
           <BaseSlider.Thumb
             aria-label={label}
-            className="size-3.5 rounded-full bg-fg outline-offset-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-fg"
+            className="size-3.5 rounded-full bg-accent outline-offset-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--focus)"
           />
         </BaseSlider.Track>
       </BaseSlider.Control>
@@ -367,7 +367,7 @@ export function TabBar<T extends string>({ value, onChange, items, className }: 
             {t.count !== undefined && <span className="tabular-nums text-fg-subtle">{t.count}</span>}
           </Tabs.Tab>
         ))}
-        <Tabs.Indicator className="absolute bottom-[-1px] left-(--active-tab-left) h-0.5 w-(--active-tab-width) bg-fg transition-[left,width] duration-200 ease-out" />
+        <Tabs.Indicator className="absolute bottom-[-1px] left-(--active-tab-left) h-0.5 w-(--active-tab-width) bg-accent transition-[left,width] duration-200 ease-out" />
       </Tabs.List>
     </Tabs.Root>
   )

@@ -60,6 +60,17 @@ export const CANVAS: Record<Aspect, { w: number; h: number }> = {
 
 /** Fontes servidas pelo próprio app: funcionam sem acesso externo na rede do evento. */
 const LOCAL_FONTS: Record<string, () => Promise<unknown>> = {
+  // Fontes da marca Conexão Profissional: Poppins nos títulos, Arial (do sistema: Windows, macOS, iOS) no texto e nos números.
+  // Poppins não é variável: um arquivo por peso (o Vite não resolve import com variável em pacote).
+  Poppins: () =>
+    Promise.all([
+      import('@fontsource/poppins/400.css'),
+      import('@fontsource/poppins/500.css'),
+      import('@fontsource/poppins/600.css'),
+      import('@fontsource/poppins/700.css'),
+      import('@fontsource/poppins/800.css'),
+    ]),
+  Arial: async () => {},
   'Schibsted Grotesk Variable': () => import('@fontsource-variable/schibsted-grotesk'),
   'Spline Sans Mono Variable': () => import('@fontsource-variable/spline-sans-mono'),
   'Archivo Variable': () => import('@fontsource-variable/archivo/wdth.css'),
@@ -69,6 +80,9 @@ const LOCAL_FONTS: Record<string, () => Promise<unknown>> = {
 }
 
 export const LOCAL_FONT_FAMILIES = Object.keys(LOCAL_FONTS)
+
+/** Sem algarismos de largura fixa: o cronômetro tremeria. Ficam fora da lista de números. */
+export const NO_TNUM = new Set(['Poppins'])
 
 /**
  * Famílias do Google Fonts oferecidas no editor, com os eixos pedidos à API.

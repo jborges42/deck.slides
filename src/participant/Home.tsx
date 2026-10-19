@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Field as BaseField } from '@base-ui/react/field'
 import { ThumbsUpIcon } from '@phosphor-icons/react/ThumbsUp'
 import { ApiError, post } from '../lib/api.ts'
-import { REACTION } from '../lib/reactions.ts'
+import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
 import { useStream, type StreamStatus } from '../lib/stream.ts'
 import { Button, Chip, cx, inputClass, notify, type Tone } from '../ui'
 import { EventHeader, Loading, Notice, PhoneField, PhonePage, PhoneSwitch, firstName, type EventBrand } from './shell.tsx'
@@ -121,7 +121,7 @@ function ConnectionBanner({ state }: { state: 'offline' | 'busy' | 'back' | null
 
 // ---------- na tela agora ----------
 
-const TYPE_HINT: Partial<Record<SceneType, string>> = { image: 'Imagem', video: 'Vídeo', embed: 'Página web', timer: 'Cronômetro' }
+const TYPE_HINT: Partial<Record<SceneType, string>> = { image: 'Imagem', video: 'Vídeo', embed: 'Página web', timer: 'Cronômetro', slides: 'Apresentação' }
 
 function NowCard({
   id,
@@ -238,7 +238,7 @@ function Reactions({ id, kinds, disabled }: { id: string; kinds: ReactionKind[];
   return (
     <div role="group" aria-label="Reações" className={cx('grid gap-2', COLS[kinds.length] ?? 'grid-cols-3')}>
       {kinds.map((kind) => {
-        const { label, Icon } = REACTION[kind]
+        const { label } = REACTION[kind]
         const n = taps[kind] ?? 0
         return (
           <button
@@ -249,7 +249,7 @@ function Reactions({ id, kinds, disabled }: { id: string; kinds: ReactionKind[];
             className="state-layer relative flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-control border border-line text-ui font-medium [--state-bg:var(--surface)] disabled:opacity-45"
           >
             {/* key muda a cada toque: o ícone remonta e a animação recomeça */}
-            <Icon key={n} size={24} weight={n ? 'fill' : 'regular'} className={cx('text-accent-fg', n > 0 && 'animate-[pop_160ms_var(--ease-out)]')} />
+            <ReactionEmoji key={n} kind={kind} className={cx('text-[28px]', n > 0 && 'animate-[pop_160ms_var(--ease-out)]')} />
             {label}
             {n > 0 && (
               <span aria-hidden className="absolute top-1 right-2 text-meta text-fg-muted tabular-nums">

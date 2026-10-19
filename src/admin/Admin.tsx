@@ -32,7 +32,7 @@ export default function Admin() {
                 className={({ isActive }) =>
                   cx(
                     'relative flex h-9 items-center text-ui font-medium transition-colors duration-100',
-                    isActive ? 'text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-fg' : 'text-fg-subtle hover:text-fg-muted',
+                    isActive ? 'text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-accent' : 'text-fg-subtle hover:text-fg-muted',
                   )
                 }
               >

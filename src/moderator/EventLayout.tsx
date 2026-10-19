@@ -7,7 +7,7 @@ import { MonitorPlayIcon } from '@phosphor-icons/react/MonitorPlay'
 import { del, patch, post } from '../lib/api.ts'
 import { ago } from '../lib/format.ts'
 import { useNow, useStream } from '../lib/stream.ts'
-import { Button, Chip, Dialog, Dot, Field, Input, Popover, Spinner, Switch, Tooltip, buttonClass, confirm, cx, notify } from '../ui'
+import { BrandFooter, BrandIcon, Button, Chip, Dialog, Dot, Field, Input, Popover, Spinner, Switch, Tooltip, buttonClass, confirm, cx, notify } from '../ui'
 import { eventLinks, run, useModerator, type EventContext } from './context.ts'
 import type { ModeratorSnapshot, ScreenInfo } from '../../shared/types.ts'
 
@@ -49,9 +49,10 @@ export default function EventLayout() {
 
   return (
     <div className="flex h-dvh min-w-[1100px] flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-5 border-b border-line bg-surface px-4">
+      <header className="on-brand flex h-12 shrink-0 items-center gap-5 px-4">
         <div className="flex min-w-0 items-center gap-1.5 text-ui">
-          <Link to="/eventos" className="text-fg-subtle hover:text-fg">
+          <Link to="/eventos" className="flex items-center gap-2 text-fg-subtle hover:text-fg">
+            <BrandIcon size={22} negative />
             Eventos
           </Link>
           <CaretRightIcon size={12} className="text-fg-subtle" />
@@ -115,6 +116,7 @@ export default function EventLayout() {
       <main className="min-h-0 flex-1">
         <Outlet context={ctx} />
       </main>
+      <BrandFooter />
     </div>
   )
 }

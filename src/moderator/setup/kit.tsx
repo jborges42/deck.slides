@@ -2,18 +2,30 @@
 import type { ReactNode } from 'react'
 import { ApiError } from '../../lib/api.ts'
 import { plural } from '../../lib/format.ts'
-import { cx, notify } from '../../ui'
+import { BrandFooter, BrandLogo, BrandMark, cx, notify } from '../../ui'
 
-/** Marca do produto: os dois monitores do favicon (prévia em verde, no ar em vermelho) e o nome. */
+/** Marca do evento nas barras azuis do console: ícone em negativo e o nome (manual do Conexão Profissional). */
 export function Mark() {
+  return <BrandMark negative />
+}
+
+/**
+ * Páginas de acesso (entrar, definir senha): painel azul com o logo em negativo e o formulário no branco,
+ * com o rodapé da marca. Em telas estreitas o painel sai e o logo fica só no rodapé.
+ */
+export function AccessFrame({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-2 text-read font-semibold text-fg">
-      <svg viewBox="4 9 24 14" width="24" height="14" fill="none" strokeWidth="2" aria-hidden>
-        <rect x="5" y="10" width="10" height="12" rx="1.5" className="stroke-preview" />
-        <rect x="17" y="10" width="10" height="12" rx="1.5" className="stroke-program" />
-      </svg>
-      deck.slides
-    </span>
+    <main className="grid min-h-dvh lg:grid-cols-2">
+      <div className="on-brand hidden place-items-center p-12 lg:grid">
+        <BrandLogo negative width={560} />
+      </div>
+      <div className="flex flex-col">
+        <div className="flex flex-1 justify-center px-6">
+          <div className="w-full max-w-[340px] pt-[16vh] pb-16">{children}</div>
+        </div>
+        <BrandFooter />
+      </div>
+    </main>
   )
 }
 
@@ -32,7 +44,7 @@ export function Page({ title, meta, actions, description, children }: PageProps)
     <div className="h-full overflow-y-auto">
       <div className="max-w-[1120px] px-10 pt-7 pb-24">
         <header className="flex min-h-8 items-center gap-6">
-          <h1 className="text-page font-semibold">{title}</h1>
+          <h1 className="font-heading text-page font-semibold">{title}</h1>
           {meta}
           <div className="ml-auto flex items-center gap-2">{actions}</div>
         </header>

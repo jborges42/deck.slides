@@ -9,7 +9,7 @@ import { SignOutIcon } from '@phosphor-icons/react/SignOut'
 import { TrashIcon } from '@phosphor-icons/react/Trash'
 import { UsersThreeIcon } from '@phosphor-icons/react/UsersThree'
 import { ApiError, api, del, post } from '../lib/api.ts'
-import { Button, Chip, Dialog, Empty, Field, IconButton, Input, Popover, Spinner, Tooltip, confirm, notify } from '../ui'
+import { BrandFooter, Button, Chip, Dialog, Empty, Field, IconButton, Input, Popover, Spinner, Tooltip, confirm, notify } from '../ui'
 import { run, useModerator, type Moderator } from './context.ts'
 import { Mark, count, focusInvalid, iconOnly, longDate, message } from './setup/kit.tsx'
 import type { EventSummary } from '../../shared/types.ts'
@@ -52,7 +52,7 @@ export default function Events() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-4">
+      <header className="on-brand flex h-12 shrink-0 items-center gap-4 px-4">
         <Mark />
         <span className="h-5 w-px bg-line" aria-hidden />
         <h1 className="text-ui font-semibold">Eventos</h1>
@@ -115,6 +115,7 @@ export default function Events() {
           </Empty>
         )}
       </main>
+      <BrandFooter />
 
       <NewEvent open={creating} onOpenChange={setCreating} />
       <Team me={me} open={team} onOpenChange={setTeam} />

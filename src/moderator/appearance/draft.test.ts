@@ -31,18 +31,34 @@ test('a predefinição padrão é o tema padrão', () => {
   assert.equal(canon(applyPreset(DEFAULT_THEME, PRESETS[0])), canon(DEFAULT_THEME))
 })
 
-test('toda predefinição gera uma paleta sem ajuste e sem contraste abaixo do mínimo', () => {
+test('toda predefinição mostra a cor de fundo pedida, sem ajuste no destaque e sem contraste abaixo do mínimo', () => {
   for (const { id, look } of PRESETS) {
     const mode = look.mode === 'auto' ? undefined : look.mode
     const th = deriveTheme({ brand: look.brand, background: look.background ?? undefined, mode, contrast: look.contrast })
-    assert.deepEqual(th.adjusted, [], id)
-    assert.deepEqual(contrastReport(th, look.contrast).filter((r) => !r.ok), [], id)
+    const tokens = { ...th.tokens, ...look.overrides } // Conexão azul fixa o fundo no Azul SENAI com cartões próprios
+    if (look.background) assert.equal(tokens.canvas, look.background.toUpperCase(), id)
+    assert.ok(!th.adjusted.includes('accent'), id)
+    assert.deepEqual(contrastReport({ ...th, tokens }, look.contrast).filter((r) => !r.ok), [], id)
   }
+})
+
+test('o tema padrão é a versão negativa da marca: fundo e destaque no Azul SENAI exato', () => {
+  assert.equal(DEFAULT_THEME.brand, '#004098')
+  assert.equal(DEFAULT_THEME.overrides.canvas, DEFAULT_THEME.background)
+})
+
+test('trocar fundo, modo ou contraste descarta as superfícies trocadas à mão; as outras trocas ficam', () => {
+  const t = { ...DEFAULT_THEME, overrides: { ...DEFAULT_THEME.overrides, fg: '#EEEEEE' } }
+  for (const patch of [{ background: '#112233' }, { background: null }, { mode: 'light' as const }, { contrast: 'high' as const }])
+    assert.deepEqual(withEdit(t, patch).overrides, { fg: '#EEEEEE' }, JSON.stringify(patch))
+  assert.deepEqual(withEdit(t, { brand: '#123456' }).overrides, t.overrides)
+  assert.deepEqual(withEdit(t, { background: t.background }).overrides, t.overrides) // mesmo valor: nada muda
+  assert.deepEqual(withEdit(t, { overrides: { canvas: '#000000' } }).overrides, { canvas: '#000000' })
 })
 
 test('editar o visual vira "personalizado"; rodapé e comportamento não', () => {
   assert.equal(withEdit(DEFAULT_THEME, { brand: '#123456' }).preset, 'personalizado')
-  assert.equal(withEdit(DEFAULT_THEME, { footer: 'x', transitionMs: 800 }).preset, 'padrao')
+  assert.equal(withEdit(DEFAULT_THEME, { footer: 'x', transitionMs: 800 }).preset, 'conexao')
 })
 
 test('comparação de temas ignora a ordem das chaves', () => {

@@ -2,6 +2,8 @@
 // Os monitores mostram só o estado confirmado pelo servidor; a prévia inclui as edições locais da cena.
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDownIcon } from '@phosphor-icons/react/ArrowDown'
+import { ArrowLeftIcon } from '@phosphor-icons/react/ArrowLeft'
+import { ArrowRightIcon } from '@phosphor-icons/react/ArrowRight'
 import { ArrowUpIcon } from '@phosphor-icons/react/ArrowUp'
 import { BroadcastIcon } from '@phosphor-icons/react/Broadcast'
 import { CommandIcon } from '@phosphor-icons/react/Command'
@@ -15,10 +17,10 @@ import { Queue } from './Queue.tsx'
 import { run, useEvent } from './context.ts'
 import { useDrafts } from './live/drafts.ts'
 import { Inspector } from './live/Inspector.tsx'
-import { takeBlocker } from './live/logic.ts'
+import { playable, takeBlocker } from './live/logic.ts'
 import { OnAirControls } from './live/OnAir.tsx'
 import { Rundown } from './live/Rundown.tsx'
-import { onScreen, type LiveCommand, type Scene } from '../../shared/types.ts'
+import { onScreen, slideIndex, type LiveCommand, type Scene } from '../../shared/types.ts'
 
 type Transition = 'cut' | 'fade'
 
@@ -80,11 +82,14 @@ export default function Live() {
     setFocusId(null)
   }, [focusId, live.preview])
 
+  // Teclas de cena (1 a 0, ↑/↓) contam só o que vai para a tela: títulos de pasta ficam de fora.
+  const cues = playable(scenes)
   const step = (delta: number) => {
-    const at = scenes.findIndex((s) => s.id === (live.preview ?? live.program))
-    const next = scenes[at < 0 ? 0 : Math.min(scenes.length - 1, Math.max(0, at + delta))]
+    const at = cues.findIndex((s) => s.id === (live.preview ?? live.program))
+    const next = cues[at < 0 ? 0 : Math.min(cues.length - 1, Math.max(0, at + delta))]
     if (next) cue(next.id)
   }
+  const slide = (to: 'next' | 'prev') => program?.type === 'slides' && void command({ op: 'slide', to })
   const timerOn = program?.type === 'timer' || live.timer.running
   const videoOn = program?.type === 'video' && live.playback.sceneId === program.id
 
@@ -93,6 +98,11 @@ export default function Live() {
     Enter: () => void take('fade'),
     ArrowUp: () => step(-1),
     ArrowDown: () => step(1),
+    // Apresentação no ar: setas e Page Up/Down (as teclas que os passadores sem fio enviam).
+    ArrowRight: () => slide('next'),
+    ArrowLeft: () => slide('prev'),
+    PageDown: () => slide('next'),
+    PageUp: () => slide('prev'),
     KeyB: () => void command({ op: 'standby', on: !live.standby }),
     KeyT: () => timerOn && void command({ op: 'timer', action: live.timer.running ? 'pause' : 'start' }),
     KeyP: () => videoOn && void command({ op: 'playback', action: live.playback.playing ? 'pause' : 'play' }),
@@ -100,7 +110,7 @@ export default function Live() {
     'Shift+Slash': () => setHelp(true),
     'Shift+IntlRo': () => setHelp(true), // "?" no teclado ABNT2
   }
-  for (let i = 0; i < 10; i++) keys[`Digit${(i + 1) % 10}`] = () => scenes[i] && cue(scenes[i].id)
+  for (let i = 0; i < 10; i++) keys[`Digit${(i + 1) % 10}`] = () => cues[i] && cue(cues[i].id)
   useHotkeys(keys)
 
   const { w, h } = CANVAS[theme.aspect]
@@ -207,6 +217,8 @@ export default function Live() {
               onChange={(d) => drafts.edit(cued.id, d)}
               onPublish={() => void drafts.save(cued.id)}
               onDiscard={() => drafts.discard(cued.id)}
+              slide={cued.type === 'slides' ? slideIndex(live, cued) : undefined}
+              onSlide={(to) => void command({ op: 'slide', sceneId: cued.id, to })}
             />
           ) : (
             <Empty title="Nenhuma cena para editar">Escolha uma cena no roteiro. Ela aparece no monitor da prévia e pode ser editada aqui.</Empty>
@@ -281,6 +293,7 @@ const SHEET: { title: string; keys: [ReactNode[], string][] }[] = [
       [['Enter'], 'Fusão'],
       [['1–9', '0'], 'Cena 1 a 10 do roteiro para a prévia'],
       [[<ArrowUpIcon key="u" size={11} />, <ArrowDownIcon key="d" size={11} />], 'Cena anterior ou seguinte para a prévia'],
+      [[<ArrowLeftIcon key="l" size={11} />, <ArrowRightIcon key="r" size={11} />], 'Slide anterior ou seguinte da apresentação no ar (Page Up e Page Down do passador também)'],
       [['B'], 'Liga e desliga a tela de espera'],
       [['T'], 'Inicia e pausa o cronômetro'],
       [['P'], 'Toca e pausa o vídeo'],

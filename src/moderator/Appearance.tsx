@@ -9,7 +9,7 @@ import { InfoIcon } from '@phosphor-icons/react/Info'
 import { WarningIcon } from '@phosphor-icons/react/Warning'
 import { patch } from '../lib/api.ts'
 import { plural } from '../lib/format.ts'
-import { CANVAS, GOOGLE_FONTS, LOCAL_FONT_FAMILIES, contrastReport, eventPalette, loadFont, loadThemeFonts } from '../lib/theme.ts'
+import { CANVAS, GOOGLE_FONTS, LOCAL_FONT_FAMILIES, NO_TNUM, contrastReport, eventPalette, loadFont, loadThemeFonts } from '../lib/theme.ts'
 import { TARGETS, TOKEN_NAMES, type TokenName } from '../../shared/screen-theme.ts'
 import {
   Button,
@@ -96,7 +96,10 @@ const FOR: Partial<Record<TokenName, string>> = {
 }
 
 /** Catálogo: pacotes locais (funcionam sem internet) + Google Fonts (todas com tnum). Monoespaçadas só para números. */
-const catalog = (numbers: boolean) => [...LOCAL_FONT_FAMILIES.filter((f) => numbers || !/ Mono\b/.test(f)), ...Object.keys(GOOGLE_FONTS)]
+const catalog = (numbers: boolean) => [
+  ...LOCAL_FONT_FAMILIES.filter((f) => (numbers ? !NO_TNUM.has(f) : !/ Mono\b/.test(f))),
+  ...Object.keys(GOOGLE_FONTS),
+]
 const weights = (family: string) =>
   Object.hasOwn(LOCAL_WEIGHTS, family) ? LOCAL_WEIGHTS[family] : Object.hasOwn(GOOGLE_FONTS, family) ? wghtRange(GOOGLE_FONTS[family]) : null
 
@@ -182,7 +185,7 @@ export default function Appearance() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-4">
         <div className="flex min-w-0 items-baseline gap-3">
-          <h1 className="shrink-0 text-title font-semibold">Aparência da tela</h1>
+          <h1 className="shrink-0 font-heading text-title font-semibold">Aparência da tela</h1>
           <p className="truncate text-ui text-fg-subtle">A tela do evento só muda quando você salva.</p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-3">
@@ -286,9 +289,9 @@ export default function Appearance() {
                 (mínimo {num(target.onAccent)}:1).
               </Note>
             )}
-            {base.adjusted.includes('background') && draft.background && (
+            {draft.background && tokens.canvas.toUpperCase() !== draft.background.toUpperCase() && !draft.overrides.canvas && (
               <Note>
-                Cor de fundo ajustada de <Hex color={draft.background} /> para <Hex color={base.tokens.canvas} /> para manter o texto legível
+                Cor de fundo ajustada de <Hex color={draft.background} /> para <Hex color={tokens.canvas} /> para manter o texto legível
                 (mínimo {num(target.text)}:1).
               </Note>
             )}
@@ -630,7 +633,7 @@ function PresetTile({ preset, tokens, active, onApply }: { preset: Preset; token
         className={cx(
           'flex aspect-video w-full flex-col justify-between rounded-monitor border p-2 transition-colors duration-100',
           align === 'center' && 'items-center',
-          active ? 'border-fg' : 'border-line group-hover:border-fg-subtle',
+          active ? 'border-accent' : 'border-line group-hover:border-fg-subtle',
         )}
         style={{ background: tokens.canvas }}
       >

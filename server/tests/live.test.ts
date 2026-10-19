@@ -583,3 +583,73 @@ describe('funções puras do relógio (shared/types.ts)', () => {
     assert.equal(playbackPosition(playback({ playing: true, startedAt: 20_000, positionMs: 7_000 }), 19_000), 7_000)
   })
 })
+
+describe('apresentação', () => {
+  const SLIDES = ['/media/ABC123/s_1.webp', '/media/ABC123/s_2.webp', '/media/ABC123/s_3.webp']
+  const deck = (slides = SLIDES) => ({ type: 'slides', name: 'Felipe — Cresol', content: { slides } })
+
+  test('passa o slide da apresentação no ar sem sair dos limites; a tela recebe na hora', async () => {
+    const { id } = await setup()
+    const sid = await addScene(id, deck())
+    await ok(id, { op: 'preview', sceneId: sid })
+    await ok(id, { op: 'take' })
+    const steps: [unknown, number][] = [['next', 1], ['next', 2], ['next', 2], ['prev', 1], [0, 0], ['prev', 0], [499, 2]]
+    for (const [to, want] of steps) {
+      await ok(id, { op: 'slide', to })
+      assert.equal((await liveOf(id)).slides[sid], want, `to ${to}`)
+    }
+    const screen = await mod.snapshot<ScreenSnapshot>(`/api/events/${id}/stream`)
+    assert.equal(screen.event.live.slides[sid], 2)
+  })
+
+  test('cada apresentação guarda o próprio slide; na prévia, escolher define de onde ela começa', async () => {
+    const { id, title } = await setup()
+    const a = await addScene(id, deck())
+    const b = await addScene(id, deck(SLIDES.slice(0, 2)))
+    await ok(id, { op: 'slide', sceneId: b, to: 1 }) // b ainda fora do ar: começa no 2º slide
+    await ok(id, { op: 'preview', sceneId: a })
+    await ok(id, { op: 'take' })
+    await ok(id, { op: 'slide', to: 'next' })
+    await wait(TAKE_GAP)
+    await ok(id, { op: 'preview', sceneId: b })
+    await ok(id, { op: 'take' })
+    assert.deepEqual((await liveOf(id)).slides, { [a]: 1, [b]: 1 })
+    // Voltar a "a" (depois de outra cena) retoma onde parou
+    await wait(TAKE_GAP)
+    await ok(id, { op: 'preview', sceneId: title.id })
+    await ok(id, { op: 'take' })
+    await wait(TAKE_GAP)
+    await ok(id, { op: 'preview', sceneId: a })
+    await ok(id, { op: 'take' })
+    assert.equal((await liveOf(id)).slides[a], 1)
+  })
+
+  test('sem apresentação no ar, cena que não é apresentação ou inexistente: recusa sem mudar nada', async () => {
+    const { id, title } = await setup()
+    const sid = await addScene(id, deck())
+    assert.equal(await refused(mod, id, { op: 'slide', to: 'next' }, 400), 'Nenhuma apresentação no ar.')
+    await ok(id, { op: 'preview', sceneId: title.id })
+    await ok(id, { op: 'take' })
+    assert.equal(await refused(mod, id, { op: 'slide', to: 'next' }, 400), 'Nenhuma apresentação no ar.')
+    assert.equal(await refused(mod, id, { op: 'slide', sceneId: title.id, to: 0 }, 400), 'A cena não é uma apresentação.')
+    assert.equal(await refused(mod, id, { op: 'slide', sceneId: 'nao-existe', to: 0 }, 404), 'Apresentação não encontrada.')
+    for (const to of [-1, 500, 1.5, 'primeiro']) await refused(mod, id, { op: 'slide', sceneId: sid, to }, 400)
+    assert.deepEqual((await liveOf(id)).slides, {})
+  })
+
+  test('excluir a apresentação apaga o slide guardado dela', async () => {
+    const { id } = await setup()
+    const sid = await addScene(id, deck())
+    await ok(id, { op: 'slide', sceneId: sid, to: 2 })
+    assert.equal((await mod.req('DELETE', `/api/events/${id}/scenes/${sid}`)).status, 200)
+    assert.deepEqual((await liveOf(id)).slides, {})
+  })
+
+  test('pasta não vai para a prévia: 400 explicando, sem mexer na prévia', async () => {
+    const { id, title } = await setup()
+    const folder = await addScene(id, { type: 'section', name: 'Abertura', content: {} })
+    await ok(id, { op: 'preview', sceneId: title.id })
+    assert.match(await refused(mod, id, { op: 'preview', sceneId: folder }, 400), /^Pastas só organizam o roteiro/)
+    assert.equal((await liveOf(id)).preview, title.id)
+  })
+})

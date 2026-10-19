@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, ApiError, post } from '../../lib/api.ts'
 import { Button, Field, Input, Spinner, buttonClass } from '../../ui'
-import { Mark, message } from '../setup/kit.tsx'
+import { AccessFrame, message } from '../setup/kit.tsx'
 import { MfaStep } from './MfaStep.tsx'
 import type { Me } from '../../../shared/admin.ts'
 
@@ -74,21 +74,21 @@ export default function SetPassword() {
   if (link === null) {
     body = loadError ? (
       <>
-        <h1 className="mt-10 text-page font-semibold">Não foi possível abrir o link.</h1>
+        <h1 className="font-heading text-page font-semibold">Não foi possível abrir o link.</h1>
         <p className="mt-1.5 text-ui text-fg-muted">{loadError}</p>
         <Button className="mt-6" onClick={load}>
           Tentar novamente
         </Button>
       </>
     ) : (
-      <div className="mt-10 text-fg-subtle">
+      <div className="text-fg-subtle">
         <Spinner size={18} />
       </div>
     )
   } else if (link === 'invalid') {
     body = (
       <>
-        <h1 className="mt-10 text-page font-semibold">Este link não é válido ou expirou.</h1>
+        <h1 className="font-heading text-page font-semibold">Este link não é válido ou expirou.</h1>
         <p className="mt-1.5 text-ui text-fg-muted">Peça um novo link à administração.</p>
         <Link to="/entrar" className={buttonClass('secondary', 'md', 'mt-6')}>
           Ir para a entrada
@@ -96,11 +96,11 @@ export default function SetPassword() {
       </>
     )
   } else if (mfa) {
-    body = <MfaStep className="mt-10" onDone={() => void enter()} />
+    body = <MfaStep onDone={() => void enter()} />
   } else {
     body = (
       <>
-        <h1 className="mt-10 text-page font-semibold">Olá, {link.name}.</h1>
+        <h1 className="font-heading text-page font-semibold">Olá, {link.name}.</h1>
         <p className="mt-1.5 text-ui text-fg-muted">
           Defina a senha da conta <span className="text-fg">{link.email}</span>.
         </p>
@@ -127,11 +127,6 @@ export default function SetPassword() {
   }
 
   return (
-    <main className="flex min-h-dvh justify-center px-6">
-      <div className="w-full max-w-[340px] pt-[16vh] pb-16">
-        <Mark />
-        {body}
-      </div>
-    </main>
+    <AccessFrame>{body}</AccessFrame>
   )
 }

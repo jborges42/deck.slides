@@ -158,7 +158,7 @@ export default function Media() {
                 aria-valuenow={Math.round(u.progress * 100)}
                 className="h-1 w-48 overflow-hidden rounded-full bg-line"
               >
-                <span className="block h-full bg-fg-muted" style={{ width: `${u.progress * 100}%` }} />
+                <span className="block h-full bg-accent" style={{ width: `${u.progress * 100}%` }} />
               </span>
               <span className="w-20 text-fg-muted tabular-nums">{i === 0 ? `${Math.round(u.progress * 100)}%` : 'Na fila'}</span>
             </li>

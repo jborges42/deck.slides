@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { renderSVG } from 'uqr'
 import { cx } from '../ui'
 import { card, group, safeOf, u } from './lib.ts'
-import { REACTION } from '../lib/reactions.ts'
+import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
 import { REACTIONS, type ReactionKind, type Theme } from '../../shared/types.ts'
 
 // ---------- entrada ----------
@@ -15,33 +15,35 @@ const INVITE = 160 // altura das duas linhas do evento só com convidados
 /** Altura da faixa de entrada, medida da base do canvas (inclui a margem de segurança). */
 export const bandHeight = (theme: Theme, qr: boolean) => safeOf(theme) + PAD + (qr ? QR : INVITE)
 
-/** Faixa inferior de ponta a ponta. QR escuro sobre ladrilho branco (ECC M, borda de 4 módulos), endereço sem "https://", PIN 3 + 3. */
-export function JoinBand({ theme, joinUrl, pin, show }: { theme: Theme; joinUrl: string | null; pin: string; show: boolean }) {
-  const svg = useMemo(
-    () => joinUrl && renderSVG(joinUrl, { ecc: 'M', border: 4, pixelSize: 1, blackColor: '#000', whiteColor: '#fff' }),
-    [joinUrl],
+/** QR escuro sobre ladrilho branco (ECC M, borda de 4 módulos), com lado `size` em unidades do canvas. */
+export function QrTile({ value, size, radius, label }: { value: string; size: number; radius: number; label: string }) {
+  const svg = useMemo(() => renderSVG(value, { ecc: 'M', border: 4, pixelSize: 1, blackColor: '#000', whiteColor: '#fff' }), [value])
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="shrink-0 overflow-hidden [&>svg]:block [&>svg]:size-full"
+      style={{ width: u(size), height: u(size), borderRadius: u(radius), shapeRendering: 'crispEdges' }}
+      // seguro: SVG gerado aqui pelo uqr a partir de um endereço; só retângulos, sem texto
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   )
+}
+
+/** Faixa inferior de ponta a ponta. QR escuro sobre ladrilho branco, endereço sem "https://", PIN 3 + 3. */
+export function JoinBand({ theme, joinUrl, pin, show }: { theme: Theme; joinUrl: string | null; pin: string; show: boolean }) {
   const safe = safeOf(theme)
   return (
     <div
       aria-hidden={!show || undefined}
       className="pointer-events-none absolute inset-x-0 bottom-0 bg-surface"
-      style={{ height: u(bandHeight(theme, !!svg)), opacity: show ? 1 : 0, transition: 'opacity 300ms linear' }}
+      style={{ height: u(bandHeight(theme, !!joinUrl)), opacity: show ? 1 : 0, transition: 'opacity 300ms linear' }}
     >
       <div
         className={cx('absolute flex items-center', theme.align === 'center' && 'justify-center')}
         style={{ top: u(PAD), bottom: u(safe), left: u(safe), right: u(safe), gap: u(56) }}
       >
-        {svg && (
-          <div
-            role="img"
-            aria-label="QR code do endereço de entrada"
-            className="shrink-0 overflow-hidden [&>svg]:block [&>svg]:size-full"
-            style={{ width: u(QR), height: u(QR), borderRadius: u(Math.min(theme.radius, 24)), shapeRendering: 'crispEdges' }}
-            // seguro: SVG gerado aqui pelo uqr a partir do link de entrada do evento; só retângulos, sem texto
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
-        )}
+        {joinUrl && <QrTile value={joinUrl} size={QR} radius={Math.min(theme.radius, 24)} label="QR code do endereço de entrada" />}
         <div className="flex min-w-0 flex-col font-body" style={{ gap: u(12) }}>
           {joinUrl ? (
             <>
@@ -99,12 +101,11 @@ function Counter({ theme, totals, enabled, bottom }: ReactionsProps) {
       style={{ ...frame.style, right: u(safeOf(theme)), bottom: u(bottom), gap: u(36) }}
     >
       {enabled.map((kind) => {
-        const Icon = REACTION[kind].Icon
         const n = totals?.[kind] ?? 0
         return (
           <span key={kind} className="flex items-center" style={{ gap: u(12) }}>
-            <Icon size="1em" weight="fill" alt={REACTION[kind].label} className="block text-accent-fg" style={{ fontSize: u(48) }} />
-            <span className="font-numbers font-semibold text-fg tabular-nums" style={{ fontSize: u(40) }}>
+            <ReactionEmoji kind={kind} alt={REACTION[kind].label} className="block" style={{ fontSize: u(56) }} />
+            <span className="font-numbers font-semibold text-fg tabular-nums" style={{ fontSize: u(48) }}>
               {n.toLocaleString('pt-BR')}
             </span>
           </span>
@@ -191,22 +192,21 @@ function Lane({ theme, totals, sceneId, bottom }: ReactionsProps) {
       style={{ right: u(safeOf(theme)), bottom: u(bottom), width: u(LANE), height: u(480) }}
     >
       {items.map((b) => {
-        const Icon = REACTION[b.kind].Icon
         return (
           <span
             key={b.id}
-            className="absolute flex text-accent-fg"
+            className="absolute flex"
             style={
               {
-                left: u(b.x * (LANE - 64)),
+                left: u(b.x * (LANE - 80)),
                 bottom: u(48),
-                fontSize: u(64),
+                fontSize: u(80),
                 '--drift': u(b.drift),
                 animation: `rise ${LIFE}ms cubic-bezier(0.16, 1, 0.3, 1) ${Math.round(b.delay)}ms both`,
               } as CSSProperties
             }
           >
-            <Icon size="1em" weight="fill" />
+            <ReactionEmoji kind={b.kind} />
           </span>
         )
       })}

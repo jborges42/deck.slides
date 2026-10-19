@@ -82,13 +82,16 @@ export interface LiveState {
   overlays: { join: boolean; reactions: boolean }
   timer: TimerState
   playback: PlaybackState
+  slides: Record<string, number> // slide atual de cada apresentação (id da cena -> índice); ausente = primeiro
 }
 
 export type SceneBody =
   | { type: 'title'; content: { kicker: string; title: string; body: string } }
   | { type: 'image'; content: { src: string; fit: 'contain' | 'cover'; caption: string } }
   | { type: 'video'; content: { src: string; fit: 'contain' | 'cover'; loop: boolean; autoplay: boolean } }
-  | { type: 'embed'; content: { url: string } }
+  // display "link": o site não abre dentro de outra página, então a tela mostra o endereço e um QR code.
+  // Cenas antigas não têm o campo: valem como "page".
+  | { type: 'embed'; content: { url: string; display?: 'page' | 'link' } }
   | {
       type: 'questions'
       content: { title: string; layout: 'spotlight' | 'list' | 'grid'; max: number; showAuthor: boolean; showLikes: boolean }
@@ -105,6 +108,19 @@ export type SceneBody =
         endText: string
       }
     }
+  // Apresentação: imagens dos slides (o PDF vira imagens no console). O slide atual fica em live.slides.
+  | { type: 'slides'; content: { slides: string[] } }
+  // Pasta do roteiro: título que agrupa as cenas seguintes até a próxima pasta. Nunca vai para a tela.
+  | { type: 'section'; content: Record<string, never> }
+
+/**
+ * Resposta de POST /events/:id/embed-check: o site aceita aparecer dentro da tela? null = não deu para saber.
+ * `url`: endereço final do mesmo site (com www ou https), quando o pedido redireciona para ele.
+ */
+export type EmbedCheck =
+  | { embeddable: true; url?: string }
+  | { embeddable: false; reason: 'blocked' | 'refused'; status?: number; url?: string }
+  | { embeddable: null }
 
 export type SceneType = SceneBody['type']
 export type Scene = { id: string; name: string; position: number } & SceneBody
@@ -236,6 +252,7 @@ export type LiveCommand =
   | { op: 'timer'; action: 'add'; ms: number }
   | { op: 'timer'; action: 'set'; mode: TimerState['mode']; durationMs: number; label: string }
   | { op: 'playback'; action: 'play' | 'pause' | 'restart' }
+  | { op: 'slide'; sceneId?: string; to: 'next' | 'prev' | number } // sem sceneId: a apresentação no ar
 
 export const DEFAULT_SETTINGS: EventSettings = {
   questionsOpen: true,
@@ -249,22 +266,25 @@ export const DEFAULT_SETTINGS: EventSettings = {
   flagWords: [],
 }
 
+// Identidade do Conexão Profissional 2026, versão negativa do manual: fundo no Azul SENAI exato.
+// O gerador escureceria o fundo para o texto passar 7:1 nos cartões; com cartões num azul pouco mais claro
+// (texto branco a 7,95:1) o fundo fica na cor oficial. Títulos em Poppins; texto e números em Arial.
 export const DEFAULT_THEME: Theme = {
-  preset: 'padrao',
-  brand: '#E0A33B',
-  background: null,
+  preset: 'conexao',
+  brand: '#004098',
+  background: '#004098',
   mode: 'dark',
   contrast: 'standard',
-  overrides: {},
+  overrides: { canvas: '#004098', surface: '#0C4DA8', raised: '#0C4DA8' },
   fonts: {
-    heading: { family: 'Schibsted Grotesk Variable' },
-    body: { family: 'Schibsted Grotesk Variable' },
-    numbers: { family: 'Schibsted Grotesk Variable' },
-    headingWeight: 650,
+    heading: { family: 'Poppins' },
+    body: { family: 'Arial' },
+    numbers: { family: 'Arial' },
+    headingWeight: 700,
   },
   logo: null,
   logoPosition: 'top-left',
-  logoSize: 56,
+  logoSize: 80, // logo horizontal da marca (3:1) legível no canto
   backgroundImage: null,
   backgroundDim: 0.6,
   aspect: '16:9',
@@ -302,12 +322,18 @@ export function defaultLive(): LiveState {
       endText: 'Tempo encerrado',
     },
     playback: { sceneId: null, playing: false, startedAt: 0, positionMs: 0 },
+    slides: {},
   }
 }
 
 /** Tempo decorrido do cronômetro no instante `now` (relógio do servidor). */
 export function timerElapsed(t: TimerState, now: number): number {
   return t.elapsedMs + (t.running ? Math.max(0, now - t.startedAt) : 0)
+}
+
+/** Slide atual da apresentação, dentro da lista (slides removidos não deixam o índice para fora). */
+export function slideIndex(live: Pick<LiveState, 'slides'>, s: { id: string; content: { slides: string[] } }): number {
+  return Math.max(0, Math.min(live.slides[s.id] ?? 0, s.content.slides.length - 1))
 }
 
 /** Posição do vídeo no instante `now` (relógio do servidor). */

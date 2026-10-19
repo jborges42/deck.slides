@@ -86,7 +86,7 @@ export function Row(p: RowProps) {
       onMouseDown={(e) => e.shiftKey && !inControl(e.target) && e.preventDefault()} // Shift+clique seleciona linhas, não texto
       onClick={(e) => p.onSelect(q, e)}
       className={cx(
-        'group relative grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 px-3 pt-1 pb-2.5 focus-visible:-outline-offset-2 focus-visible:outline-fg',
+        'group relative grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 px-3 pt-1 pb-2.5 focus-visible:-outline-offset-2 focus-visible:outline-(--focus)',
         current ? 'bg-raised' : p.picked ? 'bg-[color-mix(in_oklab,var(--fg)_5%,transparent)]' : 'hover:bg-[color-mix(in_oklab,var(--fg)_4%,transparent)]',
         air === 'program' && 'tally-program',
         air === 'preview' && 'tally-preview',
@@ -100,7 +100,7 @@ export function Row(p: RowProps) {
         onClick={(e) => p.onPick(q, e)}
         className={cx(
           'mt-1.5 grid size-4 place-items-center rounded-[3px] border',
-          p.picked ? 'border-fg bg-fg text-canvas' : 'border-line-strong hover:border-fg-muted',
+          p.picked ? 'border-accent bg-accent text-on-accent' : 'border-line-strong hover:border-fg-muted',
           !(p.picking || p.picked || current) && 'invisible group-focus-within:visible group-hover:visible',
         )}
       >

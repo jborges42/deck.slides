@@ -1,13 +1,20 @@
 // Inspetor: edita a cena da prévia. Fora do ar, salva sozinho; no ar, as mudanças esperam "Atualizar no ar".
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { BroadcastIcon } from '@phosphor-icons/react/Broadcast'
-import { clock } from '../../lib/format.ts'
-import { Button, Chip, Field, Input, Segmented, Select, Switch, Textarea, cx, type Option } from '../../ui'
+import { CheckCircleIcon } from '@phosphor-icons/react/CheckCircle'
+import { InfoIcon } from '@phosphor-icons/react/Info'
+import { WarningIcon } from '@phosphor-icons/react/Warning'
+import { FilePdfIcon } from '@phosphor-icons/react/FilePdf'
+import { XIcon } from '@phosphor-icons/react/X'
+import { post } from '../../lib/api.ts'
+import { clock, plural } from '../../lib/format.ts'
+import { Button, Chip, Field, IconButton, Input, Segmented, Select, Spinner, Switch, Textarea, cx, notify, undoable, type Option } from '../../ui'
 import { MediaPicker } from '../MediaPicker.tsx'
 import type { SaveState } from './drafts.ts'
 import { KIND } from './kinds.ts'
 import { embedUrl, parseDuration, sameDraft, type Draft } from './logic.ts'
-import type { Media, Scene, SceneContent } from '../../../shared/types.ts'
+import { SLIDE_ACCEPT, importSlides } from './slides.ts'
+import type { EmbedCheck, Media, Scene, SceneContent } from '../../../shared/types.ts'
 
 interface Props {
   eventId: string
@@ -19,9 +26,12 @@ interface Props {
   onChange: (d: Draft) => void
   onPublish: () => void
   onDiscard: () => void
+  /** Apresentação: slide atual (do servidor) e escolha de slide (no ar, muda a tela; na prévia, de onde começa). */
+  slide?: number
+  onSlide?: (index: number) => void
 }
 
-export function Inspector({ eventId, scene, draft, onAir, state, media, onChange, onPublish, onDiscard }: Props) {
+export function Inspector({ eventId, scene, draft, onAir, state, media, onChange, onPublish, onDiscard, slide = 0, onSlide }: Props) {
   const value: Draft = draft ?? { name: scene.name, content: scene.content }
   const dirty = !!draft && !sameDraft(draft, scene)
   const [epoch, setEpoch] = useState(0) // remonta os campos ao descartar (o de URL do MediaPicker não é controlado)
@@ -60,7 +70,25 @@ export function Inspector({ eventId, scene, draft, onAir, state, media, onChange
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="grid max-w-[720px] grid-cols-2 gap-x-4 gap-y-4" onKeyDown={leaveField}>
-          <Fields key={epoch} eventId={eventId} type={scene.type} c={value.content} set={set} media={media} />
+          {scene.type === 'slides' ? (
+            <SlidesFields
+              key={epoch}
+              eventId={eventId}
+              c={value.content as SceneContent<'slides'>}
+              set={set}
+              // Primeira importação numa apresentação com nome padrão: ela ganha o nome do arquivo.
+              onAdd={(urls, file) => {
+                const slides = [...(value.content as SceneContent<'slides'>).slides, ...urls]
+                const name = /^Apresentação( \d+)?$/.test(value.name.trim()) ? file.replace(/\.[^.]+$/, '').slice(0, 80) : value.name
+                onChange({ name, content: { ...value.content, slides } as Scene['content'] })
+              }}
+              current={slide}
+              onAir={onAir}
+              onPick={onSlide}
+            />
+          ) : (
+            <Fields key={epoch} eventId={eventId} type={scene.type} c={value.content} set={set} media={media} />
+          )}
           <Field label="Nome no roteiro" hint="Só aparece no console.">
             <Input
               value={value.name}
@@ -180,7 +208,7 @@ function Fields({ eventId, type, c, set, media }: FieldsProps) {
       )
     }
     case 'embed':
-      return <UrlField value={(c as SceneContent<'embed'>).url} onChange={(url) => set({ url })} />
+      return <EmbedFields eventId={eventId} c={c as SceneContent<'embed'>} set={set} />
     case 'questions': {
       const q = c as SceneContent<'questions'>
       return (
@@ -230,6 +258,125 @@ function Fields({ eventId, type, c, set, media }: FieldsProps) {
   }
 }
 
+/** Slides da apresentação: enviar (PDF ou imagens, também arrastando), escolher o slide e remover. */
+function SlidesFields({
+  eventId,
+  c,
+  set,
+  onAdd,
+  current,
+  onAir,
+  onPick,
+}: {
+  eventId: string
+  c: SceneContent<'slides'>
+  set: (patch: Partial<SceneContent<'slides'>>) => void
+  onAdd: (urls: string[], firstFile: string) => void
+  current: number
+  onAir: boolean
+  onPick?: (index: number) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const [progress, setProgress] = useState<[number, number] | null>(null)
+  const add = async (files: File[]) => {
+    if (!files.length || progress) return
+    setProgress([0, 0])
+    try {
+      const urls = await importSlides(eventId, files, (done, total) => setProgress([done, total]))
+      if (urls?.length) {
+        onAdd(urls, files[0].name)
+        notify(plural(urls.length, 'slide adicionado', 'slides adicionados'))
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Não foi possível preparar os slides.', { tone: 'critical' })
+    }
+    setProgress(null)
+  }
+  const remove = (i: number) => {
+    const before = c.slides
+    set({ slides: before.filter((_, j) => j !== i) })
+    undoable(`Slide ${i + 1} removido`, () => set({ slides: before }))
+  }
+  return (
+    <div
+      className="col-span-2 flex flex-col gap-3"
+      onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return
+        e.preventDefault()
+        void add([...e.dataTransfer.files])
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept={SLIDE_ACCEPT}
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])]
+            e.target.value = ''
+            void add(files)
+          }}
+        />
+        <Button
+          variant={c.slides.length ? 'secondary' : 'primary'}
+          icon={<FilePdfIcon />}
+          loading={!!progress}
+          className="shrink-0"
+          onClick={() => input.current?.click()}
+        >
+          {progress ? (progress[1] ? `Preparando ${progress[0] + 1} de ${progress[1]}…` : 'Abrindo…') : c.slides.length ? 'Adicionar slides' : 'Enviar apresentação'}
+        </Button>
+        <p className="text-meta text-fg-subtle">
+          PDF exportado do PowerPoint, Keynote, Google Slides ou Canva, ou as imagens dos slides. Também dá para arrastar os arquivos para cá.
+          Animações e vídeos dentro dos slides não vêm junto.
+        </p>
+      </div>
+      {c.slides.length > 0 && (
+        <>
+          <p className="text-meta text-fg-subtle">
+            {onAir ? 'Clique num slide para mostrá-lo na tela agora.' : 'Clique num slide para a apresentação começar nele.'}
+          </p>
+          <ol aria-label="Slides" className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-2 gap-y-1">
+            {c.slides.map((src, i) => (
+              <li key={`${i}:${src}`} className="group flex min-w-0 flex-col gap-0.5">
+                <button
+                  type="button"
+                  aria-label={`Slide ${i + 1}`}
+                  aria-current={i === current || undefined}
+                  onClick={() => onPick?.(i)}
+                  className="relative block aspect-video w-full overflow-hidden rounded-monitor bg-black"
+                >
+                  <img src={src} alt="" loading="lazy" draggable={false} className="size-full object-contain" />
+                  <span
+                    aria-hidden
+                    className={cx(
+                      'pointer-events-none absolute inset-0 rounded-monitor',
+                      i === current ? (onAir ? 'tally-program' : 'tally-preview') : 'border border-line',
+                    )}
+                  />
+                </button>
+                <span className="flex h-6 items-center justify-between text-meta text-fg-subtle tabular-nums">
+                  {i + 1}
+                  <IconButton
+                    size="sm"
+                    label={`Remover slide ${i + 1}`}
+                    icon={<XIcon size={12} />}
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={() => remove(i)}
+                  />
+                </span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Rótulo visual para controles que já têm nome acessível próprio (Segmented, MediaPicker). */
 function Group({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
@@ -266,6 +413,79 @@ function TimeField({ label, hint, seconds, min = 0, onChange }: { label: string;
   )
 }
 
+const DISPLAY: Option<'page' | 'link'>[] = [
+  { value: 'page', label: 'Página' },
+  { value: 'link', label: 'Endereço e QR code' },
+]
+
+/**
+ * Página web: endereço, verificação no servidor (o site aceita aparecer dentro da tela?) e o que vai para a tela.
+ * Site que bloqueia troca sozinho para endereço e QR code (a tela nunca mostra o erro) quando o endereço acabou de
+ * ser digitado ou a cena ainda não tem escolha (cenas antigas incluídas). Escolha feita à mão é respeitada.
+ */
+function EmbedFields({ eventId, c, set }: { eventId: string; c: SceneContent<'embed'>; set: (p: Partial<SceneContent<'embed'>>) => void }) {
+  const [check, setCheck] = useState<EmbedCheck | 'checking' | null>(null)
+  const typed = useRef<string | null>(null)
+  const display = c.display ?? 'page'
+  useEffect(() => {
+    setCheck(c.url ? 'checking' : null)
+    if (!c.url) return
+    let alive = true
+    post<EmbedCheck>(`/events/${eventId}/embed-check`, { url: c.url }).then(
+      (r) => {
+        if (!alive) return
+        setCheck(r)
+        const auto = typed.current === c.url || c.display === undefined
+        const patch: Partial<SceneContent<'embed'>> = {}
+        if (r.embeddable !== null && r.url && r.url !== c.url) patch.url = typed.current = r.url // mesmo site, endereço final
+        if (r.embeddable === false && auto && display === 'page') patch.display = 'link'
+        if (Object.keys(patch).length) set(patch)
+      },
+      () => alive && setCheck({ embeddable: null }),
+    )
+    return () => {
+      alive = false
+    }
+  }, [c.url])
+  const tail =
+    display === 'link' ? ' Na tela vai o endereço com QR code, para o público abrir no celular.' : ' Escolha “Endereço e QR code” para o público abrir no celular.'
+  const note: [ReactNode, string] | null =
+    check === 'checking'
+      ? [<Spinner size={14} />, 'Verificando se o site abre dentro da tela…']
+      : !check
+        ? null
+        : check.embeddable === true
+          ? [<CheckCircleIcon size={14} className="text-accent-fg" />, 'O site abre dentro da tela.']
+          : check.embeddable === false
+            ? [
+                <WarningIcon size={14} className="text-attention" />,
+                (check.reason === 'blocked'
+                  ? 'Este site não permite aparecer dentro de outra página: na tela ficaria uma página de erro.'
+                  : `O site recusou a conexão (erro ${check.status}) e provavelmente não abre na tela.`) + tail,
+              ]
+            : [<InfoIcon size={14} className="text-fg-subtle" />, 'Não foi possível verificar o site agora. Confira na tela antes de o público chegar.']
+  return (
+    <>
+      <UrlField
+        value={c.url}
+        onChange={(url) => {
+          typed.current = url
+          set({ url })
+        }}
+      />
+      <Group label="Na tela" className="col-span-2">
+        <Segmented label="Na tela" className="self-start" value={display} onChange={(d) => set({ display: d })} options={DISPLAY} />
+      </Group>
+      {note && (
+        <p role="status" className="col-span-2 flex items-start gap-2 text-meta text-fg-muted">
+          <span className="mt-px flex shrink-0">{note[0]}</span>
+          {note[1]}
+        </p>
+      )}
+    </>
+  )
+}
+
 /** Endereço da página: confirmado ao sair do campo, para a página não recarregar a cada tecla. */
 function UrlField({ value, onChange }: { value: string; onChange: (url: string) => void }) {
   const [text, setText] = useState(value)
@@ -285,7 +505,7 @@ function UrlField({ value, onChange }: { value: string; onChange: (url: string) 
   return (
     <Field
       label="Endereço da página"
-      hint="Links do YouTube viram o player. Alguns sites não permitem aparecer dentro de outra página."
+      hint="Links do YouTube, do Vimeo, do Google (apresentações, documentos, planilhas e Drive) e do Canva viram a versão que abre dentro da tela."
       error={error}
       className="col-span-2"
     >

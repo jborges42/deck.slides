@@ -17,6 +17,8 @@ const VALID: SceneBody[] = [
   { type: 'embed', content: { url: 'https://exemplo.com/painel?x=1' } },
   { type: 'questions', content: { title: 'Dúvidas', layout: 'grid', max: 12, showAuthor: false, showLikes: true } },
   { type: 'timer', content: { title: 'Café', mode: 'stopwatch', durationSec: 1, warnSec: 0, criticalSec: 0, onEnd: 'stop', endText: '' } },
+  { type: 'slides', content: { slides: ['/media/ABC123/slide_1.webp', 'https://cdn.exemplo.com/slide-2.png'] } },
+  { type: 'section', content: {} },
 ]
 const [TITLE, IMAGE, VIDEO, EMBED, QUESTIONS, TIMER] = VALID as [
   Extract<SceneBody, { type: 'title' }>,
@@ -33,6 +35,8 @@ const DEFAULT_NAMES: Record<SceneType, string> = {
   embed: 'Página web',
   questions: 'Perguntas',
   timer: 'Cronômetro',
+  slides: 'Apresentação',
+  section: 'Pasta',
 }
 
 /** Erro em JSON só com a mensagem, em português e sem detalhes internos. */
@@ -182,6 +186,45 @@ describe('criação', () => {
     const notJson = await mod.raw('POST', `/api/events/${event.id}/scenes`, { body: '{"type":', headers: { 'content-type': 'application/json' } })
     assert.equal(notJson.status, 400)
     assert.equal((await scenesOf(event.id)).length, 3)
+  })
+})
+
+describe('apresentações e pastas', () => {
+  test('apresentação recusa slide fora da biblioteca ou de https e mais de 500 slides', async () => {
+    const { event } = await createEvent(mod)
+    const slides = (list: unknown[]) => ({ type: 'slides', content: { slides: list } })
+    for (const [label, body] of [
+      ['http', slides(['http://exemplo.com/s.png'])],
+      ['caminho local', slides(['/etc/passwd'])],
+      ['vazio na lista', slides([''])],
+      ['501 slides', slides(Array.from({ length: 501 }, (_, i) => `/media/ABC123/s_${i}.webp`))],
+      ['sem lista', { type: 'slides', content: {} }],
+    ] as const) {
+      const r = await create(event.id, body)
+      assert.equal(r.status, 400, label)
+      assertError(r, 400)
+    }
+    assert.equal((await create(event.id, slides([]))).status, 201) // começa vazia; os slides chegam depois
+    assert.equal((await create(event.id, slides(Array.from({ length: 500 }, (_, i) => `/media/ABC123/s_${i}.webp`)))).status, 201)
+  })
+
+  test('"after" cria a cena logo depois da indicada (o "+" da pasta); sem ela ou se ela não existe, no fim', async () => {
+    const { event, scenes } = await createEvent(mod)
+    const folder = (await create(event.id, { type: 'section', name: 'Felipe — Cresol', content: {} })).data.id
+    const a = (await create(event.id, { ...TITLE, after: folder })).data.id
+    const b = (await create(event.id, { ...TIMER, after: a })).data.id
+    const c = (await create(event.id, { ...EMBED, after: scenes[0]!.id })).data.id
+    const d = (await create(event.id, { ...EMBED, after: 'nao-existe' })).data.id
+    const list = await scenesOf(event.id)
+    assert.deepEqual(
+      list.map((s) => s.id),
+      [scenes[0]!.id, c, scenes[1]!.id, scenes[2]!.id, folder, a, b, d],
+    )
+    assert.deepEqual(
+      list.map((s) => s.position),
+      [0, 1, 2, 3, 4, 5, 6, 7],
+    )
+    assert.equal(list[4]!.name, 'Felipe — Cresol')
   })
 })
 

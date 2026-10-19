@@ -5,7 +5,13 @@ import { DEFAULT_THEME, type FontChoice, type Media, type Theme } from '../../..
 export const LOOK_KEYS = ['brand', 'background', 'mode', 'contrast', 'overrides', 'fonts', 'scale', 'radius', 'cardStyle', 'align'] as const
 export type Look = Pick<Theme, (typeof LOOK_KEYS)[number]>
 
-const look = (l: Partial<Look>): Look => ({ ...(Object.fromEntries(LOOK_KEYS.map((k) => [k, DEFAULT_THEME[k]])) as Look), ...l })
+// Base: o visual do tema padrão sem o fundo azul fixo dele (cor e ajustes finos só valem para a versão negativa).
+const look = (l: Partial<Look>): Look => ({
+  ...(Object.fromEntries(LOOK_KEYS.map((k) => [k, DEFAULT_THEME[k]])) as Look),
+  background: null,
+  overrides: {},
+  ...l,
+})
 const fonts = (heading: string, body: string, numbers: string, headingWeight: number): Theme['fonts'] => ({
   heading: { family: heading },
   body: { family: body },
@@ -20,7 +26,9 @@ export interface Preset {
 }
 
 export const PRESETS: Preset[] = [
-  { id: 'padrao', name: 'Padrão', look: look({}) },
+  // Conexão Profissional: versão negativa (azul) e de uso geral (branco) do manual da marca.
+  { id: 'conexao', name: 'Conexão azul', look: look({ background: DEFAULT_THEME.background, overrides: DEFAULT_THEME.overrides }) },
+  { id: 'conexao-branco', name: 'Conexão branco', look: look({ background: '#FFFFFF', mode: 'light' }) },
   {
     id: 'transmissao',
     name: 'Transmissão',
@@ -69,10 +77,18 @@ export const PRESETS: Preset[] = [
 
 export const applyPreset = (t: Theme, p: Preset): Theme => ({ ...t, ...p.look, preset: p.id })
 
-/** Aplica uma edição. Mexer no visual de uma predefinição a torna "personalizado". */
+const SURFACES = new Set(['canvas', 'surface', 'raised'])
+
+/**
+ * Aplica uma edição. Mexer no visual de uma predefinição a torna "personalizado".
+ * Fundo, modo e contraste geram as superfícies de novo: trocas manuais de fundo e superfícies (como as da
+ * predefinição Conexão azul) valiam para o fundo anterior e travariam a cor nova.
+ */
 export function withEdit(t: Theme, patch: Partial<Theme>): Theme {
   const custom = LOOK_KEYS.some((k) => k in patch)
-  return { ...t, ...patch, preset: patch.preset ?? (custom ? 'personalizado' : t.preset) }
+  const regen = !patch.overrides && (['background', 'mode', 'contrast'] as const).some((k) => k in patch && patch[k] !== t[k])
+  const overrides = regen ? Object.fromEntries(Object.entries(t.overrides).filter(([k]) => !SURFACES.has(k))) : (patch.overrides ?? t.overrides)
+  return { ...t, ...patch, overrides, preset: patch.preset ?? (custom ? 'personalizado' : t.preset) }
 }
 
 /** JSON com chaves ordenadas: compara temas sem depender da ordem das chaves. */
@@ -95,6 +111,8 @@ export const uploadedFonts = (media: Media[]): Required<FontChoice>[] =>
 
 /** Pesos dos pacotes locais (font-weight declarado no CSS do Fontsource). */
 export const LOCAL_WEIGHTS: Record<string, [number, number]> = {
+  Poppins: [400, 800],
+  Arial: [400, 700],
   'Schibsted Grotesk Variable': [400, 900],
   'Spline Sans Mono Variable': [300, 700],
   'Archivo Variable': [100, 900],

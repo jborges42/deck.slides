@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { api, post } from '../lib/api.ts'
 import { Button, Field, Input, Spinner } from '../ui'
-import { Mark, focusInvalid, message } from './setup/kit.tsx'
+import { AccessFrame, focusInvalid, message } from './setup/kit.tsx'
 
 interface Me {
   moderator: object | null
@@ -73,41 +73,38 @@ export default function Auth() {
   }
 
   return (
-    <main className="flex min-h-dvh justify-center px-6">
-      <div className="w-full max-w-[340px] pt-[16vh] pb-16">
-        <Mark />
-        <h1 className="mt-10 text-page font-semibold">{setup ? 'Criar a conta da organização' : 'Entrar'}</h1>
+    <AccessFrame>
+      <h1 className="font-heading text-page font-semibold">{setup ? 'Criar a conta da organização' : 'Entrar'}</h1>
+      {setup && (
+        <p className="mt-1.5 text-ui text-fg-muted">Primeiro acesso a este servidor. Com esta conta você cria eventos e adiciona o resto da equipe.</p>
+      )}
+      <form className="mt-6 flex flex-col gap-4" onSubmit={submit} onChange={clear} noValidate>
         {setup && (
-          <p className="mt-1.5 text-ui text-fg-muted">Primeiro acesso a este servidor. Com esta conta você cria eventos e adiciona o resto da equipe.</p>
+          <Field label="Nome" error={errors.name}>
+            <Input name="name" autoComplete="name" maxLength={120} autoFocus />
+          </Field>
         )}
-        <form className="mt-6 flex flex-col gap-4" onSubmit={submit} onChange={clear} noValidate>
-          {setup && (
-            <Field label="Nome" error={errors.name}>
-              <Input name="name" autoComplete="name" maxLength={120} autoFocus />
-            </Field>
-          )}
-          <Field label="E-mail" error={errors.email}>
-            <Input name="email" type="email" autoComplete={setup ? 'email' : 'username'} maxLength={200} autoFocus={!setup} />
+        <Field label="E-mail" error={errors.email}>
+          <Input name="email" type="email" autoComplete={setup ? 'email' : 'username'} maxLength={200} autoFocus={!setup} />
+        </Field>
+        <Field label="Senha" error={errors.password} hint={setup ? 'Pelo menos 8 caracteres.' : undefined}>
+          <Input name="password" type="password" autoComplete={setup ? 'new-password' : 'current-password'} maxLength={200} />
+        </Field>
+        {setup && me.setupToken && (
+          <Field label="Código de instalação" error={errors.token} hint="O valor de SETUP_TOKEN configurado no servidor.">
+            <Input name="token" autoComplete="off" spellCheck={false} className="font-code" />
           </Field>
-          <Field label="Senha" error={errors.password} hint={setup ? 'Pelo menos 8 caracteres.' : undefined}>
-            <Input name="password" type="password" autoComplete={setup ? 'new-password' : 'current-password'} maxLength={200} />
-          </Field>
-          {setup && me.setupToken && (
-            <Field label="Código de instalação" error={errors.token} hint="O valor de SETUP_TOKEN configurado no servidor.">
-              <Input name="token" autoComplete="off" spellCheck={false} className="font-code" />
-            </Field>
-          )}
-          {error && (
-            <p role="alert" className="text-ui text-critical">
-              {error}
-            </p>
-          )}
-          <Button type="submit" variant="primary" loading={busy} className="mt-1 w-full">
-            {setup ? 'Criar conta' : 'Entrar'}
-          </Button>
-        </form>
-        {!setup && <p className="mt-6 text-meta text-fg-subtle">Para ter acesso, peça a alguém da equipe para criar sua conta.</p>}
-      </div>
-    </main>
+        )}
+        {error && (
+          <p role="alert" className="text-ui text-critical">
+            {error}
+          </p>
+        )}
+        <Button type="submit" variant="primary" loading={busy} className="mt-1 w-full">
+          {setup ? 'Criar conta' : 'Entrar'}
+        </Button>
+      </form>
+      {!setup && <p className="mt-6 text-meta text-fg-subtle">Para ter acesso, peça a alguém da equipe para criar sua conta.</p>}
+    </AccessFrame>
   )
 }

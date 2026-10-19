@@ -8,6 +8,14 @@ import type { Theme, TimerState } from '../../shared/types.ts'
 /** Medida em pixels do canvas lógico (altura 1080) convertida para CSS: escala junto com o palco. */
 export const u = (n: number) => `calc(var(--u) * ${Math.round(n * 100) / 100})`
 
+/**
+ * Faixa da marca (BrandStrip em duas linhas) fixa no canto inferior direito de toda cena. Corpo de 30: a frase
+ * no tamanho do rodapé de texto e o nome perto do autor da pergunta, legíveis no fundo do auditório.
+ */
+export const BRAND_FONT = 30
+export const BRAND = Math.ceil((2.2 + 0.4 + 1) * BRAND_FONT) // ícone (2,2 em) + espaço + linha da frase
+export const BRAND_W = 900 // largura da linha mais longa, com folga
+
 /** Margem de segurança em unidades do canvas (o tema guarda em % da altura). */
 export const safeOf = (theme: Pick<Theme, 'safe'>) => theme.safe * 10.8
 

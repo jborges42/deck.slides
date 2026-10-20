@@ -1,10 +1,9 @@
 // Configuração conferida antes de abrir o banco: valor inválido impede a inicialização em vez de virar
 // comportamento silencioso (porta aleatória, upload sem limite, cookie forjável). Nunca imprime segredos.
 export function configErrors(env = process.env): string[] {
-  const production = env.NODE_ENV === 'production'
   const errors: string[] = []
-  if (production && (env.SESSION_SECRET ?? '').length < 32)
-    errors.push('SESSION_SECRET ausente ou com menos de 32 caracteres. Gere um valor com "openssl rand -base64 48" e defina a variável.')
+  if (env.SESSION_SECRET !== undefined && env.SESSION_SECRET.length < 32)
+    errors.push('SESSION_SECRET com menos de 32 caracteres. Gere um valor com "openssl rand -base64 48" ou remova a variável para o app gerar um e guardar no banco.')
   for (const name of ['PORT', 'MAX_UPLOAD_MB']) {
     const value = env[name]
     if (value !== undefined && !(Number(value) > 0))
@@ -28,6 +27,8 @@ export function configWarnings(env = process.env): string[] {
     warnings.push('PUBLIC_URL usa http://. Convites e pareamento trafegam sem criptografia; use assim só em rede local fechada.')
   if (env.TRUST_PROXY && env.TRUST_PROXY !== '0' && env.TRUST_PROXY !== '1')
     warnings.push('TRUST_PROXY só reconhece 1. Com outro valor, os limites de tentativas contam o IP do proxy, não o do cliente.')
+  if (env.ADMIN_EMAIL && (env.ADMIN_PASSWORD ?? '').length < 8)
+    warnings.push('ADMIN_EMAIL definido sem ADMIN_PASSWORD de pelo menos 8 caracteres: a conta de gestor não foi criada.')
   if (env.VERCEL && !env.BLOB_READ_WRITE_TOKEN)
     warnings.push('BLOB_READ_WRITE_TOKEN ausente. Sem um Vercel Blob conectado ao projeto, o envio de imagens, vídeos e fontes falha.')
   return warnings

@@ -113,9 +113,14 @@ const numbered = (sql: string) => {
   return sql.replace(/'[^']*'|\?/g, (m) => (m === '?' ? `$${++i}` : m))
 }
 
-async function postgresDriver(url: string): Promise<Driver> {
+async function postgresDriver(raw: string): Promise<Driver> {
   const { default: postgres } = await import('postgres')
-  const { hostname, searchParams } = new URL(url)
+  // A integração Supabase/Vercel anexa parâmetros do próprio painel (supa=..., pgbouncer=...) que o driver
+  // repassaria ao servidor como configuração desconhecida: só sslmode segue adiante.
+  const parsed = new URL(raw)
+  for (const key of [...parsed.searchParams.keys()]) if (key !== 'sslmode') parsed.searchParams.delete(key)
+  const url = parsed.toString()
+  const { hostname, searchParams } = parsed
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
   const sql = postgres(url, {
     prepare: false, // o Transaction pooler do Supabase não guarda comandos preparados entre transações

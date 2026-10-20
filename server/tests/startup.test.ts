@@ -19,7 +19,7 @@ test('em produção, recusa SESSION_SECRET curto sem mostrar o valor e sem criar
   const dir = tmp()
   const r = run(SERVER, { NODE_ENV: 'production', SESSION_SECRET: 'curto-demais-0123', DATA_DIR: dir })
   assert.equal(r.status, 1)
-  assert.match(r.stderr, /SESSION_SECRET ausente ou com menos de 32 caracteres/)
+  assert.match(r.stderr, /SESSION_SECRET com menos de 32 caracteres/)
   assert.ok(!`${r.stdout}${r.stderr}`.includes('curto-demais-0123'))
   assert.equal(existsSync(join(dir, 'deck.db')), false)
 })

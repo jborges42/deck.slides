@@ -3,12 +3,31 @@ import { promisify } from 'node:util'
 import type { Context, MiddlewareHandler } from 'hono'
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
 import { getConnInfo } from '@hono/node-server/conninfo'
-import { get, metaValue, run, sha256 } from './db.ts'
+import { get, metaValue, newId, run, sha256 } from './db.ts'
 import { eventRow, participantRow, type EventRow, type ParticipantRow } from './model.ts'
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>
 const SECRET = process.env.SESSION_SECRET || (await metaValue('session_secret', () => randomBytes(32).toString('base64url')))
 const MONTH_S = 60 * 60 * 24 * 30
+
+/**
+ * Conta de gestor criada no deploy a partir de ADMIN_EMAIL e ADMIN_PASSWORD (variáveis da Vercel ou do .env).
+ * Só cria se ainda não existir conta com esse e-mail: nunca sobrescreve a senha trocada pelo próprio gestor.
+ */
+async function bootstrapAdmin() {
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+  const password = process.env.ADMIN_PASSWORD ?? ''
+  if (!email || password.length < 8) return // config.ts avisa no log
+  if (await get('SELECT 1 FROM moderators WHERE email = ?', email)) return
+  await run(
+    'INSERT INTO moderators (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+    newId(),
+    process.env.ADMIN_NAME?.trim() || 'Gestor',
+    email,
+    await hashPassword(password),
+    Date.now(),
+  )
+}
 const YEAR_S = MONTH_S * 12
 
 export interface Moderator {
@@ -49,6 +68,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 // E-mail inexistente também paga o custo do scrypt: o tempo de resposta não revela quem tem conta.
+await bootstrapAdmin()
+
 const DUMMY_HASH = await hashPassword(randomBytes(12).toString('hex'))
 export const burnPasswordCheck = (password: string) => verifyPassword(password, DUMMY_HASH)
 

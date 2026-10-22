@@ -8,7 +8,7 @@ import { ArrowUpIcon } from '@phosphor-icons/react/ArrowUp'
 import { BroadcastIcon } from '@phosphor-icons/react/Broadcast'
 import { CommandIcon } from '@phosphor-icons/react/Command'
 import { KeyboardIcon } from '@phosphor-icons/react/Keyboard'
-import { post } from '../lib/api.ts'
+import { patch, post } from '../lib/api.ts'
 import { useHotkeys, type Hotkeys } from '../lib/hotkeys.ts'
 import { CANVAS } from '../lib/theme.ts'
 import { Button, Chip, Dialog, Empty, IconButton, Kbd, Segmented, Tooltip, cx, notify, undoLast } from '../ui'
@@ -199,7 +199,14 @@ export default function Live() {
               />
             </Monitor>
             <div className="pt-1">
-              <OnAirControls live={live} program={program} offset={offset} openJoin={settings.openJoin} command={command} />
+              <OnAirControls
+                live={live}
+                program={program}
+                offset={offset}
+                openJoin={settings.openJoin}
+                onOpenJoin={() => void run(() => patch(`/events/${id}`, { settings: { openJoin: true } }))}
+                command={command}
+              />
             </div>
           </section>
         </div>

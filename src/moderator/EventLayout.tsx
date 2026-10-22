@@ -113,10 +113,28 @@ export default function EventLayout() {
           </Tooltip>
         </div>
       </header>
+      <OfficialAddress publicUrl={ctx.snap.publicUrl} />
       <main className="min-h-0 flex-1">
         <Outlet context={ctx} />
       </main>
       <BrandFooter />
+    </div>
+  )
+}
+
+/**
+ * Console aberto fora do endereço público (PUBLIC_URL ou, na Vercel, o domínio de produção). Na Vercel, o endereço
+ * de cada deploy fica preso àquela versão e pede login: o histórico do navegador leva a ele sem ninguém perceber.
+ */
+function OfficialAddress({ publicUrl }: { publicUrl: string | null }) {
+  if (!publicUrl || publicUrl === location.origin) return null
+  const host = publicUrl.replace(/^https?:\/\//, '')
+  return (
+    <div role="status" className="flex shrink-0 items-center gap-3 bg-attention px-4 py-2 text-ui text-on-signal">
+      <span>Este endereço não é o do evento e pode estar numa versão antiga. Use {host}.</span>
+      <a href={publicUrl + location.pathname} className="font-semibold underline underline-offset-2">
+        Abrir em {host}
+      </a>
     </div>
   )
 }

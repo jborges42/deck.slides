@@ -20,6 +20,16 @@ export function configErrors(env = process.env): string[] {
   return errors
 }
 
+/**
+ * Base dos links (QR da entrada, convites, pareamento). Sem PUBLIC_URL, na Vercel, o domínio de produção do projeto:
+ * o endereço de cada deploy (deck-slides-<hash>-<time>.vercel.app) pede login na Vercel, e o celular do aluno que
+ * lesse o QR de uma tela aberta nele cairia nesse login. Fora da Vercel, null: vale o endereço da página aberta.
+ */
+export function publicBase(env = process.env): string | null {
+  const url = env.PUBLIC_URL?.trim() || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '')
+  return url.replace(/\/$/, '') || null
+}
+
 /** Avisos que não impedem a inicialização. */
 export function configWarnings(env = process.env): string[] {
   const warnings: string[] = []

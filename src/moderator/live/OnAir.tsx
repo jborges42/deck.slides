@@ -30,12 +30,15 @@ export function OnAirControls({
   program,
   offset,
   openJoin,
+  onOpenJoin,
   command,
 }: {
   live: LiveState
   program: Scene | null
   offset: number
   openJoin: boolean
+  /** Liga a entrada aberta do evento (o QR só existe com ela). */
+  onOpenJoin: () => void
   command: Command
 }) {
   const timer = program?.type === 'timer' || live.timer.running ? live.timer : null
@@ -55,7 +58,14 @@ export function OnAirControls({
       <Switch label="Entrada (QR e PIN)" checked={live.overlays.join} onChange={(join) => void command({ op: 'overlays', join })} />
       <Switch label="Reações na tela" checked={live.overlays.reactions} onChange={(reactions) => void command({ op: 'overlays', reactions })} />
       {/* Só convidados: faixa e cena de entrada mostram o PIN sem QR. Sem este aviso, parece que o QR não existe. */}
-      {!openJoin && <p className="basis-full text-meta text-fg-subtle">Sem QR code na tela: ligue a entrada aberta em Ajustes.</p>}
+      {!openJoin && (
+        <div className="flex basis-full items-center gap-3 text-meta text-fg-subtle">
+          Sem QR code na tela: o evento aceita só convidados.
+          <Button size="sm" onClick={onOpenJoin}>
+            Ligar entrada aberta
+          </Button>
+        </div>
+      )}
       {timer && <TimerControls t={timer} offset={offset} command={command} />}
       {video && <VideoControls p={live.playback} content={video} offset={offset} command={command} />}
       {program?.type === 'slides' && <SlidesControls scene={program} live={live} command={command} />}

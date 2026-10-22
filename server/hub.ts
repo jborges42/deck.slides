@@ -7,6 +7,7 @@
 // ponytail: um sinal gravado por publish; agrupar em lote se o volume de escritas no Turso pesar.
 import type { Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
+import { publicBase } from './config.ts'
 import { all, batch, get, newCode, newId, normalizeCode, run, tx } from './db.ts'
 import {
   eventRow,
@@ -43,7 +44,7 @@ interface Client {
   stream: SSEStreamingApi
 }
 
-const PUBLIC_URL = process.env.PUBLIC_URL?.replace(/\/$/, '') || null
+const PUBLIC_URL = publicBase()
 const INSTANCE = newId() // identifica os sinais e conexões deste processo
 const POLL_MS = 250
 const BEAT_MS = 15_000 // ping para o navegador e batimento das conexões no banco

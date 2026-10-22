@@ -6,12 +6,14 @@ import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { publicBase } from '../config.ts'
+
 const SERVER = join(import.meta.dirname, '../index.ts')
 const SECRET = 'segredo-de-teste-com-bem-mais-de-32-caracteres'
 const tmp = () => mkdtempSync(join(tmpdir(), 'deck-ops-'))
 
 // Configuração de quem roda o teste não pode vazar para o processo testado.
-const CONFIG = ['NODE_ENV', 'PORT', 'DATA_DIR', 'DB_PATH', 'PUBLIC_URL', 'TRUST_PROXY', 'MAX_UPLOAD_MB', 'SESSION_SECRET', 'SETUP_TOKEN', 'VERCEL', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'BLOB_READ_WRITE_TOKEN', 'STREAM_MAX_S', 'DATABASE_URL', 'POSTGRES_URL', 'PG_TEST_URL']
+const CONFIG = ['NODE_ENV', 'PORT', 'DATA_DIR', 'DB_PATH', 'PUBLIC_URL', 'TRUST_PROXY', 'MAX_UPLOAD_MB', 'SESSION_SECRET', 'SETUP_TOKEN', 'VERCEL', 'VERCEL_PROJECT_PRODUCTION_URL', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'BLOB_READ_WRITE_TOKEN', 'STREAM_MAX_S', 'DATABASE_URL', 'POSTGRES_URL', 'PG_TEST_URL']
 const env = (vars: Record<string, string>) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !CONFIG.includes(k))), ...vars })
 const run = (file: string, vars: Record<string, string>) => spawnSync(process.execPath, [file], { env: env(vars), encoding: 'utf8', timeout: 15_000 })
 
@@ -50,4 +52,12 @@ test('com configuração válida sobe, avisa do PUBLIC_URL em http e responde se
   } finally {
     child.kill()
   }
+})
+
+test('base dos links: PUBLIC_URL; sem ela, na Vercel, o domínio de produção (o endereço do deploy pede login)', () => {
+  assert.equal(publicBase({ PUBLIC_URL: ' https://deck.exemplo.com/ ' }), 'https://deck.exemplo.com')
+  assert.equal(publicBase({ PUBLIC_URL: 'https://deck.exemplo.com', VERCEL_PROJECT_PRODUCTION_URL: 'deck-slides.vercel.app' }), 'https://deck.exemplo.com')
+  assert.equal(publicBase({ VERCEL_PROJECT_PRODUCTION_URL: 'deck-slides.vercel.app' }), 'https://deck-slides.vercel.app')
+  assert.equal(publicBase({ PUBLIC_URL: '' }), null)
+  assert.equal(publicBase({}), null)
 })

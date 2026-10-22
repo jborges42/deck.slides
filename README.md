@@ -75,7 +75,7 @@ HTTPS, domínio e proxy reverso ficam a cargo da implantação. O proxy não dev
 |---|---|---|
 | `SESSION_SECRET` | obrigatória em produção (32 caracteres ou mais) | assina os cookies de sessão; trocar encerra todas as sessões |
 | `SETUP_TOKEN` | sem valor | código exigido em produção para criar a primeira conta |
-| `PUBLIC_URL` | endereço da página aberta | base dos links de convite, do QR e do pareamento |
+| `PUBLIC_URL` | endereço da página aberta (na Vercel, o domínio de produção do projeto) | base dos links de convite, do QR e do pareamento |
 | `TRUST_PROXY` | desligado | `1` atrás de proxy reverso: IP real do cliente nos limites de tentativas |
 | `DATA_DIR` | `./data` | banco SQLite e arquivos enviados (`uploads/`) |
 | `MAX_UPLOAD_MB` | `1024` | limite por arquivo enviado |
@@ -90,7 +90,8 @@ A Vercel não tem disco nem processo contínuo: cada requisição pode cair numa
 - o banco é o **Postgres do Supabase** (`DATABASE_URL`) ou o **Turso** (`TURSO_DATABASE_URL`), em vez do arquivo em `DATA_DIR`. O SQL do app vale nos três;
 - os arquivos enviados vão para o **Vercel Blob**, direto do navegador (a função não aceita corpos acima de 4,5 MB);
 - presença, pareamento de telas, limites de tentativas e avisos de tempo real ficam no banco, e cada instância lê os avisos das outras a cada 250 ms;
-- cada conexão SSE dura até 280 s (a função tem 300 s) e o navegador reabre na hora, sem mostrar queda.
+- cada conexão SSE dura até 280 s (a função tem 300 s) e o navegador reabre na hora, sem mostrar queda;
+- sem `PUBLIC_URL`, o QR de entrada, os convites e o pareamento usam o domínio de produção (`VERCEL_PROJECT_PRODUCTION_URL`). O endereço de cada deploy (`deck-slides-<hash>-<time>.vercel.app`) pede login na Vercel e fica preso àquela versão: abra o console e a tela sempre pelo domínio de produção.
 
 `pnpm build:vercel` (o `buildCommand` do `vercel.json`) gera a saída pronta em `.vercel/output`: o front vai para a CDN com os mesmos cabeçalhos de segurança do servidor, e `/api/*` e `/media/*` vão para uma função Node 24 com tudo empacotado.
 

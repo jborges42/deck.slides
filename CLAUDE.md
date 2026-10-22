@@ -24,7 +24,7 @@ pnpm build:vercel           # saída para a Vercel em .vercel/output (Supabase o
 PG_TEST_URL=postgres://... pnpm test:pg   # testes do servidor contra Postgres
 ```
 
-Variáveis: `PORT`, `DATA_DIR` (padrão `./data`, com SQLite e uploads), `DATABASE_URL` (Postgres/Supabase) ou `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`, e `BLOB_READ_WRITE_TOKEN` (Vercel), `PUBLIC_URL` (base dos links de convite e de pareamento, quando o endereço público difere do local), `SESSION_SECRET`, `SETUP_TOKEN` (obrigatório em produção para criar a conta inicial), `TRUST_PROXY=1` (atrás de proxy reverso, para o IP real nos limites de tentativas), `MAX_UPLOAD_MB`.
+Variáveis: `PORT`, `DATA_DIR` (padrão `./data`, com SQLite e uploads), `DATABASE_URL` (Postgres/Supabase) ou `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`, e `BLOB_READ_WRITE_TOKEN` (Vercel), `PUBLIC_URL` (base dos links de convite, do QR de entrada e de pareamento, quando o endereço público difere do local; na Vercel, sem ela, vale o domínio de produção, `VERCEL_PROJECT_PRODUCTION_URL`, porque o endereço de cada deploy pede login), `SESSION_SECRET`, `SETUP_TOKEN` (obrigatório em produção para criar a conta inicial), `TRUST_PROXY=1` (atrás de proxy reverso, para o IP real nos limites de tentativas), `MAX_UPLOAD_MB`.
 
 ## Arquitetura
 

@@ -25,7 +25,19 @@ import {
 
 type Command = (cmd: LiveCommand) => Promise<unknown>
 
-export function OnAirControls({ live, program, offset, command }: { live: LiveState; program: Scene | null; offset: number; command: Command }) {
+export function OnAirControls({
+  live,
+  program,
+  offset,
+  openJoin,
+  command,
+}: {
+  live: LiveState
+  program: Scene | null
+  offset: number
+  openJoin: boolean
+  command: Command
+}) {
   const timer = program?.type === 'timer' || live.timer.running ? live.timer : null
   const video = program?.type === 'video' && live.playback.sceneId === program.id ? program.content : null
   return (
@@ -42,6 +54,8 @@ export function OnAirControls({ live, program, offset, command }: { live: LiveSt
       </Button>
       <Switch label="Entrada (QR e PIN)" checked={live.overlays.join} onChange={(join) => void command({ op: 'overlays', join })} />
       <Switch label="Reações na tela" checked={live.overlays.reactions} onChange={(reactions) => void command({ op: 'overlays', reactions })} />
+      {/* Só convidados: faixa e cena de entrada mostram o PIN sem QR. Sem este aviso, parece que o QR não existe. */}
+      {!openJoin && <p className="basis-full text-meta text-fg-subtle">Sem QR code na tela: ligue a entrada aberta em Ajustes.</p>}
       {timer && <TimerControls t={timer} offset={offset} command={command} />}
       {video && <VideoControls p={live.playback} content={video} offset={offset} command={command} />}
       {program?.type === 'slides' && <SlidesControls scene={program} live={live} command={command} />}

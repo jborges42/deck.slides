@@ -19,6 +19,17 @@ export const BRAND_W = 900 // largura da linha mais longa, com folga
 /** Margem de segurança em unidades do canvas (o tema guarda em % da altura). */
 export const safeOf = (theme: Pick<Theme, 'safe'>) => theme.safe * 10.8
 
+/**
+ * Endereço exibido (sem "https://") nas partes entre as quais a linha pode quebrar: antes de cada ponto do domínio e
+ * antes do caminho. Nunca no hífen, que pareceria hifenização, nem no meio do código. Sem `new URL()`: um
+ * PUBLIC_URL malformado não pode lançar erro e apagar a tela.
+ */
+export function addressParts(url: string): string[] {
+  const rest = url.replace(/^https?:\/\//, '')
+  const cut = rest.includes('/') ? rest.indexOf('/') : rest.length
+  return [...rest.slice(0, cut).split(/(?=\.)/), rest.slice(cut)].filter(Boolean)
+}
+
 /** PIN e códigos em duas metades: "482913" -> "482 913", "K7QX2M" -> "K7Q X2M". */
 export const group = (code: string) =>
   code.length >= 6 && code.length % 2 === 0 ? `${code.slice(0, code.length / 2)} ${code.slice(code.length / 2)}` : code

@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { contrast, deriveTheme } from '../../shared/screen-theme.ts'
-import { amberOn, group, timerFace, type TimerSpec } from './lib.ts'
+import { addressParts, amberOn, group, timerFace, type TimerSpec } from './lib.ts'
 
 const countdown: TimerSpec = { mode: 'countdown', durationMs: 600_000, warnMs: 120_000, criticalMs: 30_000, onEnd: 'overtime', endText: '' }
 
@@ -43,6 +43,14 @@ test('âmbar do aviso: legível sobre qualquer fundo gerado, nas duas polaridade
           assert.ok(contrast(amber, th.tokens.canvas) >= min, `${brand} ${background} ${mode} ${level}: ${amber}`)
         }
   assert.equal(amberOn('#0F0D0A', true), '#f5a524') // fundo escuro padrão: âmbar puro
+})
+
+test('endereço da entrada: quebra só antes de ponto do domínio e antes do caminho, e nunca lança erro', () => {
+  assert.deepEqual(addressParts('https://deck-slides.vercel.app/e/K7QX2M'), ['deck-slides', '.vercel', '.app', '/e/K7QX2M'])
+  assert.deepEqual(addressParts('http://localhost:5173/e/K7QX2M'), ['localhost:5173', '/e/K7QX2M'])
+  // PUBLIC_URL malformado (letra O na porta): new URL() lançaria e apagaria a tela.
+  assert.deepEqual(addressParts('https://deck.exemplo.com:8O80/e/K7QX2M'), ['deck', '.exemplo', '.com:8O80', '/e/K7QX2M'])
+  assert.deepEqual(addressParts('https://deck.exemplo.com'), ['deck', '.exemplo', '.com'])
 })
 
 test('PIN e códigos em duas metades', () => {

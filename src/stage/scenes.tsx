@@ -9,8 +9,8 @@ import { ThumbsUpIcon } from '@phosphor-icons/react/ThumbsUp'
 import { useNow } from '../lib/stream.ts'
 import { CANVAS } from '../lib/theme.ts'
 import { cx } from '../ui'
-import { card, timerFace, u, type TimerFace, type TimerSpec } from './lib.ts'
-import { QrTile } from './overlays.tsx'
+import { card, group, timerFace, u, type TimerFace, type TimerSpec } from './lib.ts'
+import { Address, QrTile } from './overlays.tsx'
 import { playbackPosition, slideIndex, timerElapsed, type PublicQuestion, type Scene, type SceneContent, type Theme } from '../../shared/types.ts'
 import type { StageProps } from './Stage.tsx'
 
@@ -32,6 +32,9 @@ export interface SceneProps {
   box: Box
   /** Âmbar do aviso do cronômetro, com contraste garantido sobre o fundo (amberOn). */
   amber: string
+  /** Cena de entrada: link do QR (null = só convidados) e PIN do evento. */
+  joinUrl: string | null
+  pin: string
   report?: (overflow: boolean) => void
 }
 
@@ -101,6 +104,8 @@ function contentKey(p: SceneProps): string {
       return scene.content.url
     case 'slides':
       return scene.content.slides[slideIndex(p.live, scene)] ?? '' // cada slide entra em fusão
+    case 'join':
+      return JSON.stringify([scene.content, p.joinUrl, p.pin]) // ligar a entrada aberta ou trocar o PIN também
     default:
       return JSON.stringify(scene.content)
   }
@@ -125,6 +130,8 @@ export function SceneView(p: SceneProps) {
         <SlidesScene {...p} content={scene.content} />
       ) : scene.type === 'timer' ? (
         <TimerScene {...p} content={scene.content} />
+      ) : scene.type === 'join' ? (
+        <JoinScene {...p} content={scene.content} />
       ) : null /* pasta: nunca vai para a tela */}
     </Crossfade>
   )
@@ -133,16 +140,17 @@ export function SceneView(p: SceneProps) {
 // ---------- medida ----------
 
 /**
- * Confere se `content` cabe em `box` (altura e, opcionalmente, linhas do texto marcado com data-lines).
- * Com `range`, reduz a variável --fit de max até min antes de desistir. A conta é em proporção (tudo escala
- * com --u), então o resultado é o mesmo no telão, no monitor e na miniatura.
+ * Confere se `content` cabe em `box` (altura, largura e, opcionalmente, linhas do texto marcado com data-lines).
+ * Com `range`, reduz a variável --fit de max até min antes de desistir; com `hide`, o que ainda passar da área some
+ * inteiro. A conta é em proporção (tudo escala com --u), então o resultado é o mesmo no telão, no monitor e na
+ * miniatura.
  */
 function useFit(
   box: RefObject<HTMLElement | null>,
   content: RefObject<HTMLElement | null>,
   report: SceneProps['report'],
   key: string,
-  range?: { max: number; min: number; lines?: number },
+  range?: { max: number; min: number; lines?: number; hide?: boolean },
 ) {
   useLayoutEffect(() => {
     const outer = box.current
@@ -153,6 +161,7 @@ function useFit(
       if (!el) return report?.(false)
       const fits = () => {
         if (el.getBoundingClientRect().height > outer.getBoundingClientRect().height + 0.5) return false
+        if (outer.scrollWidth > outer.clientWidth + 1) return false // linha sem quebra (PIN, domínio) vazando de lado
         const text = range?.lines ? el.querySelector<HTMLElement>('[data-lines]') : null
         if (!text) return true
         const size = parseFloat(getComputedStyle(text).fontSize)
@@ -170,7 +179,7 @@ function useFit(
       }
       // Mural que não coube nem no mínimo: os cartões que passariam da área somem inteiros (nunca uma
       // pergunta cortada no meio) e o console recebe o aviso.
-      if (!ok && range && !range.lines) {
+      if (!ok && range?.hide) {
         const limit = outer.getBoundingClientRect().bottom + 0.5
         for (const item of items) if (item.getBoundingClientRect().bottom > limit) item.style.visibility = 'hidden'
       }
@@ -415,6 +424,61 @@ function LinkView({ url, theme, box }: { url: URL; theme: Theme; box: Box }) {
   )
 }
 
+// ---------- entrada ----------
+
+/**
+ * A faixa de entrada em tela cheia, para o começo do evento: QR code grande, endereço para quem prefere digitar e
+ * PIN. O QR começa com a altura da área do texto (até 42% da largura) e cede espaço até 300 para o texto caber ao
+ * lado; se ainda assim não couber, o texto encolhe até 70% (--fit, em %) antes do aviso. Evento só com convidados:
+ * sem QR, pede o link do convite.
+ */
+function JoinScene({ content, theme, box, joinUrl, pin, report }: With<'join'>) {
+  const s = theme.scale
+  const outer = useRef<HTMLDivElement>(null)
+  const inner = useRef<HTMLDivElement>(null)
+  useFit(outer, inner, report, JSON.stringify([content, box, s, theme.fonts, theme.aspect, joinUrl, pin]), { max: 100, min: 70 })
+  const qr = Math.min(1080 - box.top - box.bottom, (CANVAS[theme.aspect].w - 2 * box.side) * 0.42)
+  const fit = (n: number) => `calc(var(--u) * var(--fit, 100) * ${Math.round(n * s) / 100})` // n × escala × --fit%
+  return (
+    <div ref={outer} className={cx('absolute flex items-center', theme.align === 'center' && 'justify-center')} style={{ ...area(box), gap: u(96) }}>
+      {joinUrl && <QrTile value={joinUrl} size={qr} min={300} radius={Math.min(theme.radius, 24)} label="QR code da página de entrada do evento" />}
+      {/* Sem min-w-0: a coluna nunca fica mais estreita que a parte mais longa que não quebra (trecho do domínio, PIN). */}
+      <div ref={inner} className="flex flex-col font-body" style={{ gap: fit(48) }}>
+        {content.title && (
+          <p
+            className="font-heading tracking-tight text-balance text-fg wrap-anywhere"
+            style={{ fontSize: fit(88), lineHeight: 1.15, fontWeight: 'var(--heading-weight)' }}
+          >
+            {content.title}
+          </p>
+        )}
+        {joinUrl ? (
+          <div className="flex flex-col" style={{ gap: fit(8) }}>
+            <p className="text-pretty text-fg-muted" style={{ fontSize: fit(44), lineHeight: 1.25 }}>
+              Aponte a câmera para o QR code ou acesse
+            </p>
+            <p className="font-semibold text-fg" style={{ fontSize: fit(64), lineHeight: 1.2 }}>
+              <Address url={joinUrl} />
+            </p>
+          </div>
+        ) : (
+          <p className="font-semibold text-fg" style={{ fontSize: fit(56), lineHeight: 1.25 }}>
+            Use o link do seu convite
+          </p>
+        )}
+        <p className="flex items-baseline" style={{ gap: fit(24) }}>
+          <span className="font-semibold text-fg-muted" style={{ fontSize: fit(48) }}>
+            PIN
+          </span>
+          <span className="font-numbers font-semibold whitespace-nowrap text-fg tabular-nums" style={{ fontSize: fit(128), lineHeight: 1.1 }}>
+            {group(pin)}
+          </span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function Placeholder({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center text-fg-muted" style={{ gap: u(24) }}>
@@ -444,7 +508,7 @@ function QuestionsScene({ content, questions, likes, theme, box, report }: With<
     body,
     report,
     JSON.stringify([list.map((q) => [q.text, q.author]), content, box, s, theme.fonts, theme.aspect, theme.cardStyle]),
-    { max, min, lines: spot ? 6 : undefined },
+    { max, min, lines: spot ? 6 : undefined, hide: !spot },
   )
   return (
     <div className={cx('absolute flex flex-col', center && 'items-center')} style={area(box)}>

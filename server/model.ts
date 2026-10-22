@@ -1,4 +1,4 @@
-import { all, get, run, tx } from './db.ts'
+import { all, get, normalizeCode, run, tx } from './db.ts'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_THEME,
@@ -72,8 +72,8 @@ export interface MediaRow {
   blob_url: string | null
 }
 
-/** Evento pelo código. Aceita o código digitado em minúsculas. */
-export const eventRow = (id: string) => get<EventRow>('SELECT * FROM events WHERE id = ?', id.toUpperCase())
+/** Evento pelo código. Aceita o código digitado em minúsculas, com espaço ou hífen e com O, I ou L no lugar de 0 e 1. */
+export const eventRow = (id: string) => get<EventRow>('SELECT * FROM events WHERE id = ?', normalizeCode(id))
 
 // Mescla com os padrões na leitura: campos novos ganham valor sem migração.
 export function toEventInfo(r: EventRow): EventInfo {

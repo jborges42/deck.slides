@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { defaultLive, type Scene, type SceneContent, type TimerState } from '../../../shared/types.ts'
-import { embedUrl, folderEnd, folderOf, moveFolder, moveId, parseDuration, playable, sameDraft, takeBlocker, timerReadout } from './logic.ts'
+import { embedUrl, folderEnd, folderOf, moveFolder, moveId, parseDuration, playable, sameDraft, sceneDetail, takeBlocker, timerReadout } from './logic.ts'
 
 test('duração: minutos soltos, mm:ss e h:mm:ss', () => {
   assert.equal(parseDuration('5'), 300)
@@ -118,4 +118,11 @@ test('rascunho com a mesma lista de slides (outro array) é o que o servidor já
   assert.ok(sameDraft({ name: 'Palestra', content: { slides: ['/media/X/a.webp', '/media/X/b.webp'] } }, s))
   assert.ok(!sameDraft({ name: 'Palestra', content: { slides: ['/media/X/a.webp'] } }, s))
   assert.equal(takeBlocker({ ...s, content: { slides: [] } } as Scene, null), 'A apresentação não tem slides. Envie o PDF abaixo.')
+})
+
+test('cena de entrada no roteiro: sem a entrada aberta, não promete QR nem endereço', () => {
+  const s = { id: 'j', name: 'Entrada', position: 0, type: 'join', content: { title: 'Participe pelo celular' } } as Scene
+  assert.equal(sceneDetail(s), 'QR code, endereço e PIN')
+  assert.equal(sceneDetail(s, false), 'Só o PIN: evento só com convidados')
+  assert.equal(takeBlocker(s, null), null)
 })

@@ -14,6 +14,7 @@ export const DEFAULT_CONTENT: { [T in SceneType]: SceneContent<T> } = {
   questions: { title: 'Perguntas', layout: 'spotlight', max: 1, showAuthor: true, showLikes: false },
   timer: { title: '', mode: 'countdown', durationSec: 300, warnSec: 60, criticalSec: 15, onEnd: 'overtime', endText: 'Tempo encerrado' },
   slides: { slides: [] },
+  join: { title: 'Participe pelo celular' },
   section: {},
 }
 
@@ -143,8 +144,8 @@ export function takeBlocker(preview: Scene | null, program: string | null): stri
   return null
 }
 
-/** Linha de apoio da cena no roteiro. */
-export function sceneDetail(s: Scene): string {
+/** Linha de apoio da cena no roteiro. `openJoin`: sem a entrada aberta, a cena de entrada não tem QR nem endereço. */
+export function sceneDetail(s: Scene, openJoin = true): string {
   switch (s.type) {
     case 'title':
       return 'Título'
@@ -162,6 +163,8 @@ export function sceneDetail(s: Scene): string {
       return s.content.mode === 'countdown' ? `Cronômetro ${clock(s.content.durationSec * 1000)}` : 'Cronômetro progressivo'
     case 'slides':
       return s.content.slides.length ? plural(s.content.slides.length, 'slide', 'slides') : 'Apresentação sem slides'
+    case 'join':
+      return openJoin ? 'QR code, endereço e PIN' : 'Só o PIN: evento só com convidados'
     case 'section':
       return 'Pasta'
   }

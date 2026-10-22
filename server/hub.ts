@@ -167,7 +167,7 @@ function participantCommon(r: EventRow, snap: ScreenSnapshot): Common {
   const program = ev.live.standby ? null : snap.program
   const label = !program
     ? ''
-    : program.type === 'title' || program.type === 'questions' || program.type === 'timer'
+    : program.type === 'title' || program.type === 'questions' || program.type === 'timer' || program.type === 'join'
       ? program.content.title || program.name
       : program.type === 'image'
         ? program.content.caption || program.name

@@ -225,17 +225,23 @@
   outline-offset: -2px;
 }
 
+/* Reação no telão: aparece em 0,3 s, sobe em velocidade constante (translate só em 0 % e 100 %) e só começa a
+   sumir no último quarto do caminho. Antes subia rápido e já apagando. */
 @keyframes rise {
   0% {
-    transform: translate(0, 0) scale(0.9);
+    translate: 0 0;
+    scale: 0.8;
     opacity: 0;
   }
-  12% {
+  6% {
+    scale: 1;
     opacity: 1;
-    transform: translate(0, -8%) scale(1);
+  }
+  75% {
+    opacity: 1;
   }
   100% {
-    transform: translate(var(--drift, 0), -420%) scale(1);
+    translate: var(--drift, 0) -400%;
     opacity: 0;
   }
 }

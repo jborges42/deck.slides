@@ -2,8 +2,10 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Client, Sse, asModerator, createEvent, wait } from './helpers.ts'
+import { DEFAULT_SETTINGS, DEFAULT_THEME, defaultLive } from '../../shared/types.ts'
 import type { EventSettings, ModeratorSnapshot, Participant, ParticipantSnapshot } from '../../shared/types.ts'
 
+const { run } = await import('../db.ts')
 const mod = await asModerator()
 
 const modSnap = (eventId: string) => mod.snapshot<ModeratorSnapshot>(`/api/events/${eventId}/stream`)
@@ -413,6 +415,28 @@ describe('entrada aberta', () => {
     assert.match(carla!.token, TOKEN)
     assert.equal((await phone.req('GET', `/api/open/${id}`)).data.joined, true)
     assert.equal((await phone.snapshot<ParticipantSnapshot>(`/api/p/${id}/stream`)).me.name, 'Carla Dias')
+  })
+
+  test('código digitado em minúsculas, com hífen, espaço ou O, I e L no lugar de 0 e 1 leva ao mesmo evento', async () => {
+    // Quem digita o endereço da tela confunde 0 com O e 1 com I ou L; o código nunca tem O, I nem L. Código fixo
+    // com 0 e 1, gravado direto no banco, para a troca acontecer em toda execução.
+    const id = '0A1B2C'
+    await run(
+      'INSERT INTO events (id, name, pin, settings, theme, live, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id,
+      'Aula magna',
+      '482913',
+      JSON.stringify({ ...DEFAULT_SETTINGS, openJoin: true }),
+      JSON.stringify(DEFAULT_THEME),
+      JSON.stringify(defaultLive()),
+      Date.now(),
+    )
+    for (const typed of ['oa-ib2c', 'OALB2C', ' 0a1b2c ', 'oa1b-2c'])
+      assert.equal((await new Client().req('GET', `/api/open/${encodeURIComponent(typed)}`)).data.event?.id, id, typed)
+    const phone = new Client()
+    assert.deepEqual((await phone.req('POST', '/api/open/oa-ib2c', { name: 'Carla Dias', pin: '482913' })).data, { eventId: id })
+    assert.equal((await phone.snapshot<ParticipantSnapshot>('/api/p/OALB2C/stream')).me.name, 'Carla Dias')
+    assert.equal((await new Client().req('GET', '/api/open/0A1B2U')).status, 404)
   })
 
   test('entrada aberta desligada responde 403 mesmo com PIN certo; evento inexistente, 404', async () => {

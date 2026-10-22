@@ -85,7 +85,7 @@ Use os componentes prontos antes de estilizar elementos na mão: `Button` (varia
 - 0 ms para ações por teclado e frequentes (corte, aprovar, rejeitar, navegar).
 - 100–150 ms para resposta a ponteiro (hover, press). Até 220 ms com `ease-out` para painéis.
 - Sem animação de entrada, sem números contando, sem bounce, sem `transition-all`.
-- Na tela do evento: corte (instantâneo) ou fusão (padrão 500 ms) entre cenas, 300 ms para troca de conteúdo dentro da cena. Reações sobem e somem (2,4 s), com no máximo 16 ao mesmo tempo e "+N" no excedente.
+- Na tela do evento: corte (instantâneo) ou fusão (padrão 500 ms) entre cenas, 300 ms para troca de conteúdo dentro da cena. Reações aparecem em 0,3 s, sobem devagar em velocidade constante e só começam a sumir no último quarto do caminho (5 s ao todo), com no máximo 16 ao mesmo tempo e "+N" no excedente.
 - Respeite `prefers-reduced-motion` no celular.
 
 ## 6. Ícones
@@ -164,7 +164,8 @@ Cada botão com atalho mostra a dica (`kbd` / `Tooltip`).
   - O endereço final do mesmo site (com www e https) substitui o digitado.
   - Site que bloqueia vai para a tela como **endereço e QR code** (“Acesse pelo celular”), em vez do erro do navegador. A troca é automática para endereço recém-digitado ou cena sem escolha (as antigas incluídas); a escolha feita à mão em “Na tela” é respeitada.
 - Apresentação: o slide inteiro, contido na área acima da linha da marca (a marca nunca cobre o slide), com fusão de 300 ms entre slides; os vizinhos ficam pré-carregados.
-- Entrada: QR escuro sobre ladrilho claro (ECC M, borda de 4 módulos, mínimo de 300 px), URL sem "https://", PIN em 72 px agrupado 3 + 3. Evento só com convidados: "Use o link do seu convite" e "PIN 482 913" em linhas separadas.
+- Entrada: QR escuro sobre ladrilho claro (ECC M, borda de 4 módulos, mínimo de 300 px), URL sem "https://", PIN em 72 px agrupado 3 + 3. Evento só com convidados: "Use o link do seu convite" e "PIN 482 913" em linhas separadas. O endereço só quebra antes de um ponto do domínio ou antes do caminho (`addressParts`): nunca no hífen, que pareceria hifenização, nem no meio do código. Alcance medido com leitores em tempo real: o QR de 300 da faixa é lido até umas 4 vezes a altura da tela (8 m numa tela de 2 m); para o fundo do auditório, a cena Entrada.
+- Cena **Entrada**: a faixa em tela cheia, para o começo do evento e para o credenciamento. QR com a altura da área do texto (até 42 % da largura), que cede espaço até 300 para o texto caber ao lado; título, “Aponte a câmera para o QR code ou acesse”, o endereço e o PIN em 128. Lida até umas 9 vezes a altura da tela (18 a 21 m numa tela de 2 m). Com ela no ar, a faixa some (repetiria o QR). Texto que não cabe, na altura ou na largura, gera o aviso “Não cabe na tela”. O QR só existe com a entrada aberta; desligada, o console avisa abaixo das chaves do No ar e no inspetor da cena.
 - Tela de espera: marca (logo, nome do evento, entrada) ou preto.
 - Abre com um portão "Iniciar exibição" (tela cheia, áudio liberado, tela sempre ligada, cursor oculto após 2 s parado). Sem conexão, congela o último quadro; o público nunca vê erro.
 

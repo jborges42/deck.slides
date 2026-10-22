@@ -6,9 +6,10 @@ import { InfoIcon } from '@phosphor-icons/react/Info'
 import { WarningIcon } from '@phosphor-icons/react/Warning'
 import { FilePdfIcon } from '@phosphor-icons/react/FilePdf'
 import { XIcon } from '@phosphor-icons/react/X'
-import { post } from '../../lib/api.ts'
+import { patch, post } from '../../lib/api.ts'
 import { clock, plural } from '../../lib/format.ts'
 import { Button, Chip, Field, IconButton, Input, Segmented, Select, Spinner, Switch, Textarea, cx, notify, undoable, type Option } from '../../ui'
+import { run, useEvent } from '../context.ts'
 import { MediaPicker } from '../MediaPicker.tsx'
 import type { SaveState } from './drafts.ts'
 import { KIND } from './kinds.ts'
@@ -255,7 +256,40 @@ function Fields({ eventId, type, c, set, media }: FieldsProps) {
         </>
       )
     }
+    case 'join': {
+      const j = c as SceneContent<'join'>
+      return (
+        <>
+          <Field label="Título" hint="Aparece acima das instruções de entrada e do PIN." className="col-span-2">
+            <Input data-autofocus value={j.title} maxLength={120} onChange={(e) => set({ title: e.target.value })} />
+          </Field>
+          <OpenJoin eventId={eventId} />
+        </>
+      )
+    }
   }
+}
+
+/**
+ * A mesma chave de Ajustes, aqui porque decide o que a cena mostra: desligada, o evento aceita só convidados e a
+ * tela fica sem QR code (quem lesse cairia numa página que pede o link do convite). É do evento, não da cena: vale
+ * na hora, mesmo com a cena no ar, sem passar por "Atualizar no ar". A descrição diz isso.
+ */
+function OpenJoin({ eventId }: { eventId: string }) {
+  const on = useEvent().snap.event.settings.openJoin
+  return (
+    <Switch
+      label="Entrada aberta"
+      description={
+        on
+          ? 'Vale para o evento todo, na hora: quem lê o QR code ou digita o endereço entra com o nome e o PIN.'
+          : 'Vale para o evento todo, na hora. Desligada, só convidados entram e a tela mostra o PIN, sem QR code.'
+      }
+      checked={on}
+      onChange={(openJoin) => void run(() => patch(`/events/${eventId}`, { settings: { openJoin } }))}
+      className="col-span-2 max-w-[480px]"
+    />
+  )
 }
 
 /** Slides da apresentação: enviar (PDF ou imagens, também arrastando), escolher o slide e remover. */

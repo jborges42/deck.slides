@@ -199,7 +199,7 @@ export default function Live() {
               />
             </Monitor>
             <div className="pt-1">
-              <OnAirControls live={live} program={program} offset={offset} command={command} />
+              <OnAirControls live={live} program={program} offset={offset} openJoin={settings.openJoin} command={command} />
             </div>
           </section>
         </div>

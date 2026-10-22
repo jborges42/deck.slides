@@ -440,7 +440,7 @@ const Row = memo(function Row({ scene: s, index, first, last, nested, onAir, inP
           </span>
           <span className="flex min-w-0 items-center gap-1 text-meta text-fg-subtle">
             <Icon size={12} className="shrink-0" />
-            <span className="truncate">{sceneDetail(s)}</span>
+            <span className="truncate">{sceneDetail(s, !!thumb.joinUrl)}</span>
             {reactions > 0 && <span className="ml-auto shrink-0 pl-1.5 tabular-nums">{plural(reactions, 'reação', 'reações')}</span>}
           </span>
         </span>

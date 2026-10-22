@@ -133,6 +133,7 @@ const sceneBody = z.discriminatedUnion('type', [
     }),
   }),
   z.object({ type: z.literal('slides'), content: z.object({ slides: z.array(mediaRef).max(500, 'Uma apresentação tem no máximo 500 slides.') }) }),
+  z.object({ type: z.literal('join'), content: z.object({ title: text(120) }) }),
   z.object({ type: z.literal('section'), content: z.object({}) }),
 ])
 
@@ -192,6 +193,7 @@ const SCENE_NAMES: Record<Scene['type'], string> = {
   questions: 'Perguntas',
   timer: 'Cronômetro',
   slides: 'Apresentação',
+  join: 'Entrada',
   section: 'Pasta',
 }
 

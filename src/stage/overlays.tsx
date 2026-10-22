@@ -1,32 +1,51 @@
 // Sobreposições do palco: faixa de entrada (QR, endereço e PIN) e reações da plateia.
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { renderSVG } from 'uqr'
 import { cx } from '../ui'
-import { card, group, safeOf, u } from './lib.ts'
+import { addressParts, card, group, safeOf, u } from './lib.ts'
 import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
 import { REACTIONS, type ReactionKind, type Theme } from '../../shared/types.ts'
 
 // ---------- entrada ----------
 
-const QR = 300 // lado do QR: escaneável a ~10× a largura física
+// Lado do QR da faixa. Medido com leitores em tempo real (prévia de ~1920 px): lido até umas 4 vezes a altura da
+// tela (8 m numa tela de 2 m). O fundo do auditório precisa da cena Entrada, que chega a umas 9 vezes.
+const QR = 300
 const PAD = 40
 const INVITE = 160 // altura das duas linhas do evento só com convidados
 
 /** Altura da faixa de entrada, medida da base do canvas (inclui a margem de segurança). */
 export const bandHeight = (theme: Theme, qr: boolean) => safeOf(theme) + PAD + (qr ? QR : INVITE)
 
-/** QR escuro sobre ladrilho branco (ECC M, borda de 4 módulos), com lado `size` em unidades do canvas. */
-export function QrTile({ value, size, radius, label }: { value: string; size: number; radius: number; label: string }) {
+/**
+ * QR escuro sobre ladrilho branco (ECC M, borda de 4 módulos), com lado `size` em unidades do canvas. Com `min`,
+ * cede espaço numa linha flexível até esse lado, sempre quadrado.
+ */
+export function QrTile({ value, size, min = size, radius, label }: { value: string; size: number; min?: number; radius: number; label: string }) {
   const svg = useMemo(() => renderSVG(value, { ecc: 'M', border: 4, pixelSize: 1, blackColor: '#000', whiteColor: '#fff' }), [value])
   return (
     <div
       role="img"
       aria-label={label}
-      className="shrink-0 overflow-hidden [&>svg]:block [&>svg]:size-full"
-      style={{ width: u(size), height: u(size), borderRadius: u(radius), shapeRendering: 'crispEdges' }}
+      className="aspect-square overflow-hidden [&>svg]:block [&>svg]:size-full"
+      style={{ width: u(size), minWidth: u(min), flexShrink: min < size ? 1 : 0, borderRadius: u(radius), shapeRendering: 'crispEdges' }}
       // seguro: SVG gerado aqui pelo uqr a partir de um endereço; só retângulos, sem texto
       dangerouslySetInnerHTML={{ __html: svg }}
     />
+  )
+}
+
+/** Endereço sem "https://", que só quebra entre as partes de `addressParts` ("site.com.br" / "/e/K7QX2M"). */
+export function Address({ url }: { url: string }) {
+  return (
+    <>
+      {addressParts(url).map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && <wbr />}
+          <span className="whitespace-nowrap">{part}</span>
+        </Fragment>
+      ))}
+    </>
   )
 }
 
@@ -50,8 +69,8 @@ export function JoinBand({ theme, joinUrl, pin, show }: { theme: Theme; joinUrl:
               <p className="text-fg-muted" style={{ fontSize: u(40), lineHeight: 1.25 }}>
                 Participe pelo celular
               </p>
-              <p className="font-semibold text-fg wrap-anywhere" style={{ fontSize: u(48), lineHeight: 1.25 }}>
-                {joinUrl.replace(/^https?:\/\//, '')}
+              <p className="font-semibold text-fg" style={{ fontSize: u(48), lineHeight: 1.25 }}>
+                <Address url={joinUrl} />
               </p>
             </>
           ) : (
@@ -123,7 +142,7 @@ interface Burst {
   delay: number
 }
 
-const LIFE = 2400
+const LIFE = 5000 // sobe devagar e fica inteira até três quartos do caminho (keyframes `rise` em styles.css)
 const LANE = 240 // largura da faixa: ícones de 64 espalhados, sem empilhar
 const MAX_ALIVE = 16
 const PER_KIND = 4 // por lote de totais (até 4 por segundo)
@@ -202,7 +221,7 @@ function Lane({ theme, totals, sceneId, bottom }: ReactionsProps) {
                 bottom: u(48),
                 fontSize: u(80),
                 '--drift': u(b.drift),
-                animation: `rise ${LIFE}ms cubic-bezier(0.16, 1, 0.3, 1) ${Math.round(b.delay)}ms both`,
+                animation: `rise ${LIFE}ms linear ${Math.round(b.delay)}ms both`,
               } as CSSProperties
             }
           >

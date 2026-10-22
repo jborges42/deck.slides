@@ -5,6 +5,7 @@ import { FilmStripIcon } from '@phosphor-icons/react/FilmStrip'
 import { FolderSimpleIcon } from '@phosphor-icons/react/FolderSimple'
 import { ImageIcon } from '@phosphor-icons/react/Image'
 import { PresentationIcon } from '@phosphor-icons/react/Presentation'
+import { QrCodeIcon } from '@phosphor-icons/react/QrCode'
 import { TextTIcon } from '@phosphor-icons/react/TextT'
 import { TimerIcon } from '@phosphor-icons/react/Timer'
 import type { SceneType } from '../../../shared/types.ts'
@@ -19,6 +20,7 @@ export const KINDS: Kind[] = [
   { type: 'embed', label: 'Página web', Icon: BrowserIcon },
   { type: 'questions', label: 'Perguntas', Icon: ChatCircleTextIcon },
   { type: 'timer', label: 'Cronômetro', Icon: TimerIcon },
+  { type: 'join', label: 'Entrada', Icon: QrCodeIcon },
 ]
 
 export const KIND = {

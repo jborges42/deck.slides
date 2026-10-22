@@ -101,14 +101,14 @@ export function Stage(props: StageProps) {
 
   const shown = props.standby ? null : scene // null = tela de espera
   const black = !shown && theme.standby === 'black'
-  const measured = shown?.type === 'title' || shown?.type === 'questions'
+  const measured = shown?.type === 'title' || shown?.type === 'questions' || shown?.type === 'join'
   useEffect(() => {
     if (!measured) report(false)
   }, [measured, report])
 
   const fadeMs = thumb || live.transition !== 'fade' ? 0 : theme.transitionMs
   const box = layout(theme, black ? scene : shown) // sob o preto, a cena guarda o próprio layout: nada pula ao voltar
-  const join = !thumb && live.overlays.join && !black
+  const join = !thumb && live.overlays.join && !black && shown?.type !== 'join' // a cena de entrada já mostra o QR e o PIN
   const band = bandHeight(theme, !!props.joinUrl)
   // Faixa da marca: na margem de segurança ou, com a faixa de entrada visível, logo acima dela.
   const brand = join ? band + 24 : safeOf(theme)
@@ -126,6 +126,8 @@ export function Stage(props: StageProps) {
       likes={props.likes}
       box={sceneBox}
       amber={amber}
+      joinUrl={props.joinUrl}
+      pin={props.pin}
       report={shown ? report : undefined}
     />
   )

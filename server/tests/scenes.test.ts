@@ -2,7 +2,7 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { app, asModerator, Client, createEvent, joinParticipant, live } from './helpers.ts'
-import type { EventSummary, ModeratorSnapshot, SceneBody, SceneType, ScreenSnapshot } from '../../shared/types.ts'
+import type { EventSummary, ModeratorSnapshot, ParticipantSnapshot, SceneBody, SceneType, ScreenSnapshot } from '../../shared/types.ts'
 
 const mod = await asModerator()
 const snapshot = (id: string) => mod.snapshot<ModeratorSnapshot>(`/api/events/${id}/stream`)
@@ -18,6 +18,7 @@ const VALID: SceneBody[] = [
   { type: 'questions', content: { title: 'Dúvidas', layout: 'grid', max: 12, showAuthor: false, showLikes: true } },
   { type: 'timer', content: { title: 'Café', mode: 'stopwatch', durationSec: 1, warnSec: 0, criticalSec: 0, onEnd: 'stop', endText: '' } },
   { type: 'slides', content: { slides: ['/media/ABC123/slide_1.webp', 'https://cdn.exemplo.com/slide-2.png'] } },
+  { type: 'join', content: { title: 'Participe pelo celular' } },
   { type: 'section', content: {} },
 ]
 const [TITLE, IMAGE, VIDEO, EMBED, QUESTIONS, TIMER] = VALID as [
@@ -36,6 +37,7 @@ const DEFAULT_NAMES: Record<SceneType, string> = {
   questions: 'Perguntas',
   timer: 'Cronômetro',
   slides: 'Apresentação',
+  join: 'Entrada',
   section: 'Pasta',
 }
 
@@ -174,6 +176,8 @@ describe('criação', () => {
       ['ajuste desconhecido', { type: 'image', content: { ...IMAGE.content, fit: 'stretch' } }],
       ['vídeo com aspas', { type: 'video', content: { ...VIDEO.content, src: 'https://x.com/v.mp4" onerror="alert(1)' } }],
       ['vídeo com autoplay em texto', { type: 'video', content: { ...VIDEO.content, autoplay: 'sim' } }],
+      ['entrada sem título', { type: 'join', content: {} }],
+      ['título da entrada longo demais', { type: 'join', content: { title: 'x'.repeat(121) } }],
       ['nome longo demais', { ...EMBED, name: 'x'.repeat(81) }],
       ['corpo nulo', null],
       ['sem corpo', undefined],
@@ -186,6 +190,20 @@ describe('criação', () => {
     const notJson = await mod.raw('POST', `/api/events/${event.id}/scenes`, { body: '{"type":', headers: { 'content-type': 'application/json' } })
     assert.equal(notJson.status, 400)
     assert.equal((await scenesOf(event.id)).length, 3)
+  })
+})
+
+describe('entrada', () => {
+  test('a cena de entrada vai ao ar com o PIN para a tela; o celular vê o título dela, não o nome interno', async () => {
+    const { event } = await createEvent(mod)
+    const id = (await create(event.id, { type: 'join', content: { title: 'Envie suas perguntas' } })).data.id as string
+    const { phone } = await joinParticipant(mod, event.id)
+    await takeLive(event.id, id)
+    const screen = await mod.snapshot<ScreenSnapshot>(`/api/screen/stream?event=${event.id}`)
+    assert.deepEqual(screen.program, { id, name: 'Entrada', position: 3, type: 'join', content: { title: 'Envie suas perguntas' } })
+    assert.deepEqual([screen.event.pin, screen.event.openJoin], [event.pin, false])
+    const p = await phone.snapshot<ParticipantSnapshot>(`/api/p/${event.id}/stream`)
+    assert.deepEqual(p.now, { sceneId: id, type: 'join', label: 'Envie suas perguntas', questions: [] })
   })
 })
 

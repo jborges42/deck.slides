@@ -110,6 +110,8 @@ export type SceneBody =
     }
   // Apresentação: imagens dos slides (o PDF vira imagens no console). O slide atual fica em live.slides.
   | { type: 'slides'; content: { slides: string[] } }
+  // Entrada em tela cheia: QR code da página do evento, endereço e PIN (o que a faixa de entrada mostra, em grande).
+  | { type: 'join'; content: { title: string } }
   // Pasta do roteiro: título que agrupa as cenas seguintes até a próxima pasta. Nunca vai para a tela.
   | { type: 'section'; content: Record<string, never> }
 

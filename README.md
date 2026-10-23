@@ -120,7 +120,7 @@ Sem nenhum banco configurado, a função não sobe e o log da Vercel diz o motiv
 - **Tentativas.** Limites por IP (contados no banco, valem somados entre instâncias) no login, no PIN, na consulta de convites, no envio de perguntas, nas reações e no pareamento de telas.
 - **Participantes e telas.** Convite com token aleatório de 144 bits, ou nome mais PIN do evento. Gerar um novo link derruba as sessões do convite antigo. Bloquear um participante encerra a conexão na hora. A tela é pareada por um código digitado no console; o servidor guarda só o hash do segredo da tela.
 - **Entrada de dados.** Todo corpo de requisição é validado com zod (mensagens em pt-BR), com limite de 2 MB para JSON. Endereços de mídia e de página web aceitam só arquivos do próprio evento ou `http(s)`.
-- **Navegador.** CSP sem scripts de terceiros (`script-src 'self'`, `frame-ancestors 'none'`), `nosniff`, `Referrer-Policy: same-origin`, Permissions-Policy restritiva e `noindex`. Escritas de outro site são recusadas (CSRF e cookie SameSite).
+- **Navegador.** CSP sem scripts de terceiros (`script-src 'self'`, `frame-ancestors 'none'`; só o telão aceita um iframe, e só da própria origem, para a moldura), `nosniff`, `Referrer-Policy: same-origin`, Permissions-Policy restritiva e `noindex`. Escritas de outro site são recusadas (CSRF e cookie SameSite).
 - **Arquivos enviados.** Extensão definida pelo tipo validado, nunca pelo nome; nome aleatório; servidos com CSP `sandbox` e `nosniff`; limite de tamanho por streaming. Só o front compilado e os arquivos enviados são públicos; arquivos do projeto e o banco nunca são servidos (também não no `pnpm dev`). No Vercel Blob, o token de envio vale só para um caminho, um tipo e um tamanho; o servidor confere tipo e tamanho reais antes de registrar, e os arquivos ficam no domínio do Blob, que não lê os cookies do app.
 - **Erros.** Erro interno nunca expõe detalhes ao cliente; o detalhe vai para o log do servidor.
 
@@ -146,7 +146,7 @@ Emojis das reações: [Twemoji](https://github.com/jdecked/twemoji), de Twitter,
 
 **A tela mostra "Iniciar exibição".** É de propósito: o navegador só libera tela cheia, som e tela sempre ligada depois de um clique. Clique uma vez no computador da projeção; ao recarregar a página, o portão volta.
 
-**Versão nova publicada com o telão aberto.** A tela confere a versão a cada minuto. Fora da tela cheia, se recarrega sozinha e volta direto à exibição, sem o portão. Em tela cheia, espera: a página recarregada voltaria fora dela, porque o navegador só entra em tela cheia com um gesto. Para atualizar, recarregue num intervalo (<kbd>F5</kbd> e "Iniciar exibição").
+**Versão nova publicada com o telão aberto.** O telão é uma moldura que fica em tela cheia, com o conteúdo num iframe. A cada minuto ela confere a versão publicada; com versão nova, o conteúdo novo carrega por trás e assume numa fusão, sem recarregar a página: tela cheia, som liberado e tela ligada continuam, e a plateia não percebe. Com vídeo ou página web no ar, a troca espera a próxima cena sem som. Um telão aberto antes da moldura precisa ser recarregado à mão uma vez (<kbd>F5</kbd> e "Iniciar exibição").
 
 **Vídeo do YouTube.** Na cena Vídeo, use "Usar URL" e cole o link (watch, youtu.be, shorts ou live): o telão toca no player do YouTube e os botões Tocar, Pausar e Voltar ao início do console comandam o player. No console aparece só um aviso, como na página web. Para mostrar o YouTube sem os controles do console, use a cena Página web.
 

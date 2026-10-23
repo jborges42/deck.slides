@@ -52,8 +52,9 @@ writeFileSync(
 )
 
 // Páginas estáticas saem da CDN sem passar pela função: levam os mesmos cabeçalhos que o app.ts põe nas respostas.
-const probe = new Hono().use(secureHeaders(securityHeaders(true, true))).get('/', (c) => c.body(null))
-const headers = { ...Object.fromEntries((await probe.request('/')).headers), 'x-robots-tag': ROBOTS }
+// O telão (/tela) aceita a própria moldura num iframe; as demais páginas, nenhuma (frame-ancestors).
+const probe = new Hono().use(secureHeaders(securityHeaders(true, true))).get('*', (c) => c.body(null))
+const headersOf = async (path: string) => ({ ...Object.fromEntries((await probe.request(path)).headers), 'x-robots-tag': ROBOTS })
 
 writeFileSync(
   `${OUT}/config.json`,
@@ -61,7 +62,9 @@ writeFileSync(
     {
       version: 3,
       routes: [
-        { src: '^/(?!api/|media/).*', headers, continue: true },
+        // Rotas que não se sobrepõem: a documentação não diz qual vence quando duas definem o mesmo cabeçalho.
+        { src: '^/(?!api/|media/|tela(?:/|$)).*', headers: await headersOf('/'), continue: true },
+        { src: '^/tela(?:/.*)?$', headers: await headersOf('/tela'), continue: true },
         // Nome com hash: um deploy novo troca o arquivo, então pode ficar em cache para sempre.
         { src: '^/assets/.*', headers: { 'cache-control': 'public, max-age=31536000, immutable' }, continue: true },
         { handle: 'filesystem' },

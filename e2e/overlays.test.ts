@@ -4,7 +4,7 @@
 import { after, before, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import type { Page } from 'playwright-core'
+import type { FrameLocator, Page } from 'playwright-core'
 import { setupModerator, start, watchErrors, type Env } from './harness.ts'
 
 let env: Env
@@ -17,7 +17,7 @@ const QUESTION = 'Como o mercado avalia quem está começando a carreira e ainda
 const shot = (page: Page, name: string) => (process.env.E2E_SHOTS ? page.screenshot({ path: join(process.env.E2E_SHOTS, `${name}.png`) }) : null)
 
 /** Algarismos do cronômetro em segundos ("01:58" -> 118). */
-async function seconds(screen: Page): Promise<number> {
+async function seconds(screen: FrameLocator): Promise<number> {
   const [m, s] = (await screen.getByRole('timer').textContent())!.trim().split(':').map(Number)
   return m! * 60 + s!
 }
@@ -68,12 +68,14 @@ test('pergunta e cronômetro sobre o conteúdo, sincronizados em duas telas', as
       const s = await projector.newPage()
       const e = watchErrors(s)
       await s.goto(`/tela/${id}`)
-      await s.getByRole('button', { name: 'Iniciar exibição' }).click()
-      await s.getByText('Conexão Profissional').first().waitFor()
-      return { page: s, errors: e }
+      // O conteúdo roda num iframe da moldura (a página que fica em tela cheia).
+      const view = s.frameLocator('iframe[data-quadro="ativo"]')
+      await view.getByRole('button', { name: 'Iniciar exibição' }).click()
+      await view.getByText('Conexão Profissional').first().waitFor()
+      return { page: s, view, errors: e }
     }),
   )
-  const both = (fn: (s: Page) => Promise<unknown>) => Promise.all(screens.map((s) => fn(s.page)))
+  const both = (fn: (s: FrameLocator) => Promise<unknown>) => Promise.all(screens.map((s) => fn(s.view)))
   const telao = screens[0]!.page
 
   // ---------- pergunta sobre o conteúdo (tecla S na fila) ----------
@@ -89,9 +91,9 @@ test('pergunta e cronômetro sobre o conteúdo, sincronizados em duas telas', as
 
   // Faixa de entrada ligada com a pergunta na tela: espera a pergunta sair.
   await toggle('Entrada (QR e PIN)', true)
-  const band = (s: Page) => s.getByText('Use o link do seu convite').locator('xpath=ancestor::*[contains(@style, "opacity")][1]').getAttribute('style')
+  const band = (s: FrameLocator) => s.getByText('Use o link do seu convite').locator('xpath=ancestor::*[contains(@style, "opacity")][1]').getAttribute('style')
   await page.waitForTimeout(400)
-  for (const style of await Promise.all(screens.map((s) => band(s.page)))) assert.match(style!, /opacity: 0(;|$)/)
+  for (const style of await Promise.all(screens.map((s) => band(s.view)))) assert.match(style!, /opacity: 0(;|$)/)
   await toggle('Entrada (QR e PIN)', false)
 
   // Tela de espera esconde; voltar mostra de novo.
@@ -108,23 +110,23 @@ test('pergunta e cronômetro sobre o conteúdo, sincronizados em duas telas', as
   await both((s) => s.getByRole('timer').filter({ hasText: '02:00' }).waitFor())
   await page.getByRole('button', { name: 'Iniciar' }).click()
   await telao.waitForTimeout(2500)
-  const [a, b] = await Promise.all(screens.map((s) => seconds(s.page)))
+  const [a, b] = await Promise.all(screens.map((s) => seconds(s.view)))
   assert.ok(a! <= 118 && a! >= 115, `telão em ${a} s`)
   assert.ok(Math.abs(a! - b!) <= 1, `telas fora de sincronia: ${a} e ${b}`)
   await shot(telao, '2-pergunta-e-cronometro')
 
   // Canto padrão: em cima à esquerda; trocar leva para a direita.
-  const x = async (s: Page) => (await s.getByRole('timer').boundingBox())!.x
-  assert.ok((await x(telao)) < 960)
+  const x = async (s: FrameLocator) => (await s.getByRole('timer').boundingBox())!.x
+  assert.ok((await x(screens[0]!.view)) < 960)
   await page.getByRole('button', { name: 'Em cima à direita' }).click()
   await both((s) => until('cronômetro não foi para a direita', async () => (await x(s)) > 960))
 
   // Pausar congela as duas telas no mesmo número; continuar e zerar.
   await page.getByRole('button', { name: 'Pausar' }).click()
   await telao.waitForTimeout(400)
-  const paused = await Promise.all(screens.map((s) => seconds(s.page)))
+  const paused = await Promise.all(screens.map((s) => seconds(s.view)))
   await telao.waitForTimeout(1500)
-  assert.deepEqual(await Promise.all(screens.map((s) => seconds(s.page))), paused)
+  assert.deepEqual(await Promise.all(screens.map((s) => seconds(s.view))), paused)
   assert.equal(paused[0], paused[1])
   await page.getByRole('button', { name: 'Continuar' }).waitFor()
   await page.getByRole('button', { name: 'Zerar' }).click()

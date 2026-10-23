@@ -65,6 +65,22 @@ test('respostas da API levam CSP restritiva e cabeçalhos de segurança, inclusi
   }
 })
 
+test('só o telão aceita iframe, e só da própria origem (moldura); as demais páginas, nenhum', async () => {
+  const c = new Client()
+  const csp = async (path: string) => {
+    const res = await c.raw('GET', path)
+    await res.body?.cancel()
+    return res.headers.get('content-security-policy') ?? ''
+  }
+  for (const path of ['/tela', '/tela/K7QX2M', '/tela/K7QX2M?quadro', '/tela?quadro=troca']) {
+    const value = await csp(path)
+    assert.ok(value.includes("frame-ancestors 'self'"), `${path}: "${value}"`)
+    assert.ok(value.includes("frame-src 'self' https:"), `${path}: "${value}"`)
+  }
+  for (const path of ['/', '/telao', '/eventos/K7QX2M', '/entrar', '/e/K7QX2M', '/api/auth/me'])
+    assert.ok((await csp(path)).includes("frame-ancestors 'none'"), path)
+})
+
 test('rota de API desconhecida responde 404 JSON genérico, sem cair no front-end', async () => {
   const c = new Client()
   for (const [method, path] of [['GET', '/api/nao-existe'], ['POST', '/api/nao-existe'], ['GET', '/api/auth/nada'], ['DELETE', '/api/auth/me']] as const) {

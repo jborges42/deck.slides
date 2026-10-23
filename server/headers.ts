@@ -4,6 +4,9 @@ import type { secureHeaders } from 'hono/secure-headers'
 
 type Options = NonNullable<Parameters<typeof secureHeaders>[0]>
 
+/** Páginas do telão: a moldura mostra o conteúdo num iframe da mesma origem (src/screen/Screen.tsx). */
+const TELA = /^\/tela(\/|$)/
+
 /** `blob`: mídia no Vercel Blob (outro domínio) e envio direto do navegador para a API dele. */
 export function securityHeaders(production: boolean, blob: boolean): Options {
   const blobFiles = blob ? ['https://*.public.blob.vercel-storage.com'] : []
@@ -17,12 +20,13 @@ export function securityHeaders(production: boolean, blob: boolean): Options {
           fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', ...blobFiles],
           imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
           mediaSrc: ["'self'", 'blob:', 'https:'],
-          frameSrc: ['https:'], // cena "Página web"
+          frameSrc: ["'self'", 'https:'], // moldura do telão (também em http na rede local) e cena "Página web"
           connectSrc: ["'self'", ...(blob ? ['https://vercel.com'] : [])],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
-          frameAncestors: ["'none'"],
+          // Só o telão entra num iframe, e só no da própria moldura; as demais páginas, em nenhum.
+          frameAncestors: [(c) => (TELA.test(c.req.path) ? "'self'" : "'none'")],
         }
       : undefined,
     referrerPolicy: 'same-origin', // tokens de convite não vazam para sites externos (fontes, embeds)

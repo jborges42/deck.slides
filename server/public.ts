@@ -37,6 +37,9 @@ const TEN_MIN = 10 * 60_000
 // Uma sala inteira costuma sair pelo mesmo IP (roteador do local). Tokens de convite têm 144 bits e códigos de
 // evento ~30 bits: mesmo 1000 consultas por minuto não permitem varredura útil.
 const LOOKUPS_PER_MIN = 1000
+// PINs errados na entrada aberta, por IP a cada 10 min. A turma toda sai pelo IP do Wi-Fi: com 30, erros de
+// digitação travavam a sala. Com 300, varrer metade dos PINs de 6 dígitos ainda leva ~12 dias por IP.
+const OPEN_PIN_MISSES = 300
 
 /** Dados de marca mostrados antes da confirmação do PIN. */
 function brand(r: EventRow) {
@@ -144,10 +147,10 @@ pub.post('/open/:id', async (c) => {
   if (await participantFromCookie(c, r.id)) return c.json({ eventId: r.id })
   // Conta só PIN errado: uma sala inteira atrás do mesmo roteador entra sem esbarrar no limite.
   const key = `pin:${r.id}:${clientIp(c)}`
-  if (await isLimited(key, 30)) return c.json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' }, 429)
+  if (await isLimited(key, OPEN_PIN_MISSES)) return c.json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' }, 429)
   const input = await body(c, z.object({ name: z.string().trim().min(2, 'Informe seu nome.').max(80), pin: z.string().trim().max(12) }))
   if (!safeEqual(input.pin, r.pin)) {
-    await overLimit(key, 30, TEN_MIN)
+    await overLimit(key, OPEN_PIN_MISSES, TEN_MIN)
     return c.json({ error: 'PIN incorreto. Confira os números com a organização do evento.' }, 401)
   }
   const id = newId()

@@ -1,9 +1,9 @@
 // Participantes e convites: importação, convite com PIN, bloqueio, novo link, remoção, entrada aberta e stream.
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Client, Sse, asModerator, createEvent, wait } from './helpers.ts'
+import { Client, Sse, asModerator, createEvent, live, wait } from './helpers.ts'
 import { DEFAULT_SETTINGS, DEFAULT_THEME, defaultLive } from '../../shared/types.ts'
-import type { EventSettings, ModeratorSnapshot, Participant, ParticipantSnapshot } from '../../shared/types.ts'
+import type { Counts, EventSettings, ModeratorSnapshot, Participant, ParticipantSnapshot } from '../../shared/types.ts'
 
 const { run } = await import('../db.ts')
 const mod = await asModerator()
@@ -448,14 +448,14 @@ describe('entrada aberta', () => {
     assert.equal((await new Client().req('POST', '/api/open/ZZZZZZ', { name: 'Carla Dias', pin })).status, 404)
   })
 
-  test('após 30 PINs errados na entrada aberta recusa até o PIN certo naquele IP; acertos não contam', async () => {
+  test('após 300 PINs errados na entrada aberta recusa até o PIN certo naquele IP; acertos não contam', async () => {
     const { id, pin } = await eventWith()
     await settings(id, { openJoin: true })
     // Uma sala atrás do mesmo roteador: muitos acertos seguidos não esbarram no limite.
     for (let i = 0; i < 40; i++)
       assert.equal((await new Client('10.9.9.9').req('POST', `/api/open/${id}`, { name: `Pessoa ${i + 1}`, pin })).status, 201)
     const attacker = new Client()
-    for (let i = 0; i < 30; i++)
+    for (let i = 0; i < 300; i++)
       assert.equal((await attacker.req('POST', `/api/open/${id}`, { name: 'Carla Dias', pin: wrongPin(pin) })).status, 401)
     const locked = await attacker.req('POST', `/api/open/${id}`, { name: 'Carla Dias', pin })
     assert.equal(locked.status, 429)
@@ -472,6 +472,35 @@ describe('entrada aberta', () => {
     assert.equal((await phone.req('POST', `/api/open/${id}`, { name: 'Elisa Prado', pin })).status, 201)
     for (let i = 0; i < 3; i++) assert.equal((await phone.req('POST', `/api/open/${id}`, { name: 'Outro Nome', pin })).status, 200)
     assert.deepEqual((await modSnap(id)).participants.map((p) => p.name), ['Elisa Prado'])
+  })
+
+  test('quem entra pelo QR só com nome e PIN já pergunta, curte e reage', async () => {
+    const { id, pin } = await eventWith()
+    await settings(id, { openJoin: true })
+    const phone = new Client()
+    assert.equal((await phone.req('POST', `/api/open/${id}`, { name: 'Bruno Lima', pin })).status, 201)
+    const [bruno] = (await modSnap(id)).participants
+
+    assert.equal((await phone.req('POST', `/api/p/${id}/questions`, { text: 'Como montar o primeiro orçamento?' })).status, 201)
+    const [q] = (await modSnap(id)).questions
+    assert.deepEqual([q!.participantId, q!.author, q!.status], [bruno!.id, 'Bruno Lima', 'pending'])
+    assert.equal((await mod.req('PATCH', `/api/events/${id}/questions/${q!.id}`, { status: 'approved' })).status, 200)
+    assert.equal((await phone.req('POST', `/api/p/${id}/questions/${q!.id}/like`, { on: true })).status, 200)
+
+    // Reação conta para a cena no ar.
+    const scene = (await modSnap(id)).scenes[0]!.id
+    await live(mod, id, { op: 'preview', sceneId: scene })
+    assert.equal((await live(mod, id, { op: 'take' })).status, 200)
+    assert.equal((await phone.req('POST', `/api/p/${id}/reactions`, { kinds: { applause: 2 } })).status, 200)
+
+    const s = await mod.stream(`/api/events/${id}/stream`)
+    try {
+      await s.next('state')
+      const counts = await s.next<Counts>('counts')
+      assert.deepEqual([counts.likes[q!.id], counts.reactions[scene]?.applause], [1, 2])
+    } finally {
+      s.close()
+    }
   })
 
   test('consultas de convite e de entrada aberta somam até 1000 por minuto por IP; a 1001ª responde 429', async () => {

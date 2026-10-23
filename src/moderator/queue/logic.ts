@@ -5,10 +5,14 @@ export type Tab = 'pending' | 'approved' | 'archive'
 export type Sort = 'likes' | 'recent'
 export type Air = 'program' | 'preview' | 'screen' | null
 
-/** Respondida que continua na tela fica nas aprovadas até sair dela: é lá que se tira da tela. */
-export function tabOf(q: Pick<Question, 'status' | 'screen'>): Tab {
+/**
+ * Respondida que continua na tela (ou sobre o conteúdo: `overlay` é o id em `live.questionOverlay`)
+ * fica nas aprovadas até sair dela: é lá que se tira.
+ */
+export function tabOf(q: Pick<Question, 'status' | 'screen'> & { id?: string }, overlay?: string | null): Tab {
   if (q.status === 'pending') return 'pending'
-  return q.status === 'approved' || (q.status === 'answered' && q.screen !== null) ? 'approved' : 'archive'
+  const shown = q.screen !== null || (!!overlay && q.id === overlay)
+  return q.status === 'approved' || (q.status === 'answered' && shown) ? 'approved' : 'archive'
 }
 
 /** Fila por ordem de chegada (novas no fim); aprovadas por curtidas ou recência; arquivo, mais recentes primeiro. */

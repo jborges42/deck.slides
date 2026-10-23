@@ -17,10 +17,10 @@ import { Queue } from './Queue.tsx'
 import { run, useEvent } from './context.ts'
 import { useDrafts } from './live/drafts.ts'
 import { Inspector } from './live/Inspector.tsx'
-import { playable, takeBlocker } from './live/logic.ts'
+import { playable, takeBlocker, timerInUse } from './live/logic.ts'
 import { OnAirControls } from './live/OnAir.tsx'
 import { Rundown } from './live/Rundown.tsx'
-import { onScreen, slideIndex, type LiveCommand, type Scene } from '../../shared/types.ts'
+import { onScreen, overlayQuestion, slideIndex, type LiveCommand, type Scene } from '../../shared/types.ts'
 
 type Transition = 'cut' | 'fade'
 
@@ -90,7 +90,7 @@ export default function Live() {
     if (next) cue(next.id)
   }
   const slide = (to: 'next' | 'prev') => program?.type === 'slides' && void command({ op: 'slide', to })
-  const timerOn = program?.type === 'timer' || live.timer.running
+  const timerOn = timerInUse(live, program)
   const videoOn = program?.type === 'video' && live.playback.sceneId === program.id
 
   const keys: Hotkeys = {
@@ -114,11 +114,13 @@ export default function Live() {
   useHotkeys(keys)
 
   const { w, h } = CANVAS[theme.aspect]
+  const overlay = overlayQuestion(snap.questions, live.questionOverlay, settings.screenName)
   const stage = {
     theme,
     eventName: event.name,
     pin: event.pin,
     joinUrl: settings.openJoin ? ctx.links.join : null,
+    questionOverlay: overlay,
     likes: counts.likes,
     live,
     enabledReactions: settings.reactions,
@@ -205,6 +207,7 @@ export default function Live() {
                 offset={offset}
                 openJoin={settings.openJoin}
                 onOpenJoin={() => void run(() => patch(`/events/${id}`, { settings: { openJoin: true } }))}
+                question={overlay}
                 command={command}
               />
             </div>
@@ -314,6 +317,7 @@ const SHEET: { title: string; keys: [ReactNode[], string][] }[] = [
       [['R'], 'Rejeitar'],
       [['E'], 'Editar'],
       [['D'], 'Destacar na tela, só esta pergunta'],
+      [['S'], 'Sobrepor a pergunta ao conteúdo no ar; de novo, remove'],
       [['M'], 'Marcar como respondida'],
       [['X'], 'Selecionar várias'],
       [['/'], 'Buscar perguntas'],

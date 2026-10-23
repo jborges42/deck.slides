@@ -1,6 +1,6 @@
 // Regras do console Ao vivo, sem React nem DOM: testadas em logic.test.ts (`pnpm test`).
 import { clock, plural } from '../../lib/format.ts'
-import type { Scene, SceneContent, SceneType, TimerState } from '../../../shared/types.ts'
+import type { LiveCommand, LiveState, Scene, SceneContent, SceneType, TimerState } from '../../../shared/types.ts'
 
 /** Edição local de uma cena no inspetor. */
 export type Draft = { name: string; content: Scene['content'] }
@@ -183,4 +183,17 @@ export function timerReadout(t: TimerState, elapsed: number): { text: string; to
   // Limite maior ou igual à duração é ignorado: o cronômetro começaria já colorido.
   const within = (ms: number) => ms < t.durationMs && left <= ms
   return { text: clock(left, true), tone: within(t.criticalMs) ? 'critical' : within(t.warnMs) ? 'warn' : 'normal' }
+}
+
+/** Cronômetro com controles no No ar (botões e tecla T): cena de cronômetro no ar, correndo ou sobre o conteúdo. */
+export const timerInUse = (live: Pick<LiveState, 'timer' | 'timerOverlay'>, program: Scene | null) =>
+  program?.type === 'timer' || live.timer.running || live.timerOverlay
+
+/**
+ * Duração da fala definida no No ar, sem cena de cronômetro: regressivo com os limites de uma cena nova. Um set
+ * sem limites herdaria os da cena anterior (a mensagem "Retomando" do Intervalo apareceria no fim da fala).
+ */
+export function manualTimer(seconds: number): LiveCommand {
+  const { warnSec, criticalSec, onEnd } = DEFAULT_CONTENT.timer
+  return { op: 'timer', action: 'set', mode: 'countdown', durationMs: seconds * 1000, label: '', warnMs: warnSec * 1000, criticalMs: criticalSec * 1000, onEnd, endText: '' }
 }

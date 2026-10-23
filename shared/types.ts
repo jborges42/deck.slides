@@ -83,6 +83,10 @@ export interface LiveState {
   timer: TimerState
   playback: PlaybackState
   slides: Record<string, number> // slide atual de cada apresentação (id da cena -> índice); ausente = primeiro
+  // Sobre o conteúdo: valem sobre qualquer cena no ar, sem trocar a cena (somem na tela de espera).
+  timerOverlay: boolean // cronômetro (`timer`) num canto de cima
+  timerCorner: 'top-left' | 'top-right'
+  questionOverlay: string | null // id da pergunta sobre o conteúdo; null = nenhuma
 }
 
 export type SceneBody =
@@ -219,6 +223,8 @@ export interface ScreenSnapshot {
   event: Pick<EventInfo, 'id' | 'name' | 'pin' | 'theme' | 'live'> & { reactions: ReactionKind[]; openJoin: boolean }
   program: Scene | null
   questions: PublicQuestion[]
+  /** Pergunta sobre o conteúdo (live.questionOverlay), já pública; null = nenhuma ou não está mais aprovada. */
+  questionOverlay: PublicQuestion | null
 }
 
 export interface ParticipantSnapshot {
@@ -252,9 +258,22 @@ export type LiveCommand =
   | { op: 'overlays'; join?: boolean; reactions?: boolean }
   | { op: 'timer'; action: 'start' | 'pause' | 'reset' }
   | { op: 'timer'; action: 'add'; ms: number }
-  | { op: 'timer'; action: 'set'; mode: TimerState['mode']; durationMs: number; label: string }
+  // Limites e fim omitidos mantêm os do cronômetro anterior.
+  | {
+      op: 'timer'
+      action: 'set'
+      mode: TimerState['mode']
+      durationMs: number
+      label: string
+      warnMs?: number
+      criticalMs?: number
+      onEnd?: TimerState['onEnd']
+      endText?: string
+    }
   | { op: 'playback'; action: 'play' | 'pause' | 'restart' }
   | { op: 'slide'; sceneId?: string; to: 'next' | 'prev' | number } // sem sceneId: a apresentação no ar
+  | { op: 'timerOverlay'; on?: boolean; corner?: LiveState['timerCorner'] }
+  | { op: 'questionOverlay'; questionId: string | null } // só pergunta aprovada (ou respondida); null tira
 
 export const DEFAULT_SETTINGS: EventSettings = {
   questionsOpen: true,
@@ -325,6 +344,9 @@ export function defaultLive(): LiveState {
     },
     playback: { sceneId: null, playing: false, startedAt: 0, positionMs: 0 },
     slides: {},
+    timerOverlay: false,
+    timerCorner: 'top-left',
+    questionOverlay: null,
   }
 }
 
@@ -352,13 +374,27 @@ export function publicAuthor(name: string, anonymous: boolean, format: EventSett
   return `${parts[0]} ${[...parts[parts.length - 1]][0].toUpperCase()}.` // por caractere: emoji não vira meio caractere
 }
 
+const showable = (q: Question) => q.status === 'approved' || q.status === 'answered'
+const toPublic = (q: Question, format: EventSettings['screenName']): PublicQuestion => ({
+  id: q.id,
+  text: q.text,
+  author: publicAuthor(q.author, q.anonymous, format),
+  likes: q.likes,
+})
+
 /** Perguntas que a cena de perguntas mostra: marcadas para a tela, aprovadas, na ordem de exibição. */
 export function onScreen(questions: Question[], max: number, format: EventSettings['screenName']): PublicQuestion[] {
   return questions
-    .filter((q) => q.screen !== null && (q.status === 'approved' || q.status === 'answered'))
+    .filter((q) => q.screen !== null && showable(q))
     .sort((a, b) => a.screen! - b.screen!)
     .slice(0, max)
-    .map((q) => ({ id: q.id, text: q.text, author: publicAuthor(q.author, q.anonymous, format), likes: q.likes }))
+    .map((q) => toPublic(q, format))
+}
+
+/** Pergunta sobre o conteúdo (`live.questionOverlay`): só existe na tela se ainda estiver aprovada ou respondida. */
+export function overlayQuestion(questions: Question[], id: string | null, format: EventSettings['screenName']): PublicQuestion | null {
+  const q = id === null ? undefined : questions.find((x) => x.id === id)
+  return q && showable(q) ? toPublic(q, format) : null
 }
 
 /** Normaliza para comparar textos e termos: minúsculas, sem acentos, sem letras repetidas, espaços simples. */

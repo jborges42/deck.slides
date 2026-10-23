@@ -26,6 +26,19 @@ test('respondida na tela fica nas aprovadas; fora dela, no arquivo', () => {
   assert.equal(tabOf({ status: 'pending', screen: null }), 'pending')
 })
 
+test('respondida sobre o conteúdo fica nas aprovadas; as outras abas não mudam', () => {
+  const a = (status: Question['status'], screen: number | null = null) => ({ id: 'a', status, screen })
+  assert.equal(tabOf(a('answered'), 'a'), 'approved')
+  assert.equal(tabOf(a('answered'), 'b'), 'archive') // outra pergunta sobre o conteúdo
+  assert.equal(tabOf(a('answered'), null), 'archive')
+  assert.equal(tabOf(a('answered')), 'archive') // sem o segundo argumento, como antes
+  assert.equal(tabOf({ status: 'answered', screen: null }, undefined), 'archive') // sem id não casa com "nenhuma"
+  assert.equal(tabOf(a('rejected'), 'a'), 'archive')
+  assert.equal(tabOf(a('pending'), 'a'), 'pending')
+  assert.equal(tabOf(a('approved'), 'a'), 'approved')
+  assert.equal(tabOf(a('answered', 0), 'b'), 'approved')
+})
+
 test('aprovadas por curtidas, empate pela mais antiga', () => {
   const qs = [q('a', { likes: 1, createdAt: 3 }), q('b', { likes: 5, createdAt: 2 }), q('c', { likes: 1, createdAt: 1 })]
   assert.deepEqual(order(qs, 'approved', 'likes', (x) => x.likes).map((x) => x.id), ['b', 'c', 'a'])

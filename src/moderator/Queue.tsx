@@ -47,7 +47,8 @@ export function Queue({ ctx }: { ctx: EventContext }) {
   const now = useNow(15_000) + ctx.offset
 
   const likes = (q: Question) => ctx.counts.likes[q.id] ?? q.likes
-  const groups = Map.groupBy(questions, tabOf)
+  const overlay = snap.event.live.questionOverlay
+  const groups = Map.groupBy(questions, (q) => tabOf(q, overlay))
   const count = (t: Tab) => groups.get(t)?.length ?? 0
   const needle = normalize(query)
   const list = order(groups.get(tab) ?? [], tab, sort, likes).filter((q) => matches(q, needle))
@@ -132,7 +133,7 @@ export function Queue({ ctx }: { ctx: EventContext }) {
     const todo = changes.filter(([id, s]) => questions.find((q) => q.id === id)?.status !== s)
     if (!todo.length) return
     const screenOf = (id: string) => questions.find((q) => q.id === id)?.screen ?? null
-    advance(new Set(todo.filter(([id, status]) => tabOf({ status, screen: screenOf(id) }) !== tab).map(([id]) => id)))
+    advance(new Set(todo.filter(([id, status]) => tabOf({ id, status, screen: screenOf(id) }, overlay) !== tab).map(([id]) => id)))
     const before = capture(questions, todo.map(([id]) => id))
     const ok = await run(async () => {
       for (const [status, cs] of Map.groupBy(todo, ([, s]) => s)) await post(`${api}/bulk`, { ids: cs.map(([id]) => id), status })
@@ -168,6 +169,16 @@ export function Queue({ ctx }: { ctx: EventContext }) {
     notify(`Cena “${scene.name}” na prévia.`, { description: 'Pressione Espaço para colocar no ar.' })
   }
 
+  /** Pergunta sobre o conteúdo: alterna esta; desfazer volta à anterior (ou a nenhuma). */
+  async function toggleOverlay(q: Question) {
+    if (q.status !== 'approved' && q.status !== 'answered') return notify('Aprove a pergunta antes de sobrepor ao conteúdo.')
+    const next = q.id === overlay ? null : q.id
+    if (tabOf(q, next) !== tab) advance(new Set([q.id])) // respondida entra ou sai das aprovadas
+    const set = (questionId: string | null) => run(() => post(`/events/${ctx.id}/live`, { op: 'questionOverlay', questionId }))
+    const before = overlay
+    if (await set(next)) undoable(next ? 'Pergunta sobreposta ao conteúdo.' : 'Pergunta removida de cima do conteúdo.', () => set(before))
+  }
+
   async function clearScreen() {
     const before = capture(questions, [])
     if (await run(() => post(`${api}/screen/clear`)))
@@ -180,7 +191,7 @@ export function Queue({ ctx }: { ctx: EventContext }) {
     const one = target ?? (cur ? byId.get(cur) : undefined)
     const ids = many.length ? many : one ? [one.id] : []
     if (!ids.length) return
-    if (many.length && action !== 'edit') setPicked(new Set())
+    if (many.length && action !== 'edit' && action !== 'overlay') setPicked(new Set()) // estas agem só na atual
     const all = (status: QuestionStatus) => ids.map((id): [string, QuestionStatus] => [id, status])
     switch (action) {
       case 'approve':
@@ -199,6 +210,8 @@ export function Queue({ ctx }: { ctx: EventContext }) {
         )
       case 'spotlight':
         return present(ids)
+      case 'overlay':
+        return one && toggleOverlay(one)
       case 'show':
       case 'hide':
         return one && run(() => post(`${api}/${one.id}/screen`, { on: action === 'show' }))
@@ -217,7 +230,7 @@ export function Queue({ ctx }: { ctx: EventContext }) {
     search.current?.select()
   }
 
-  // J/K, A/R/E/D/M, X, Esc e /. Espaço, Enter, números, setas, B, T, P, ? e ⌘Z são do console ao vivo.
+  // J/K, A/R/E/D/S/M, X, Esc e /. Espaço, Enter, números, setas, B, T, P, ? e ⌘Z são do console ao vivo.
   const keys: Hotkeys = {
     KeyJ: () => move(1),
     KeyK: () => move(-1),
@@ -225,6 +238,7 @@ export function Queue({ ctx }: { ctx: EventContext }) {
     KeyR: () => perform('reject'),
     KeyE: () => perform('edit'),
     KeyD: () => perform('spotlight'),
+    KeyS: () => perform('overlay'),
     KeyM: () => perform('answer'),
     KeyX: () => cur && togglePick(cur),
     Escape: () => {
@@ -419,6 +433,7 @@ export function Queue({ ctx }: { ctx: EventContext }) {
                 likes={likes(q)}
                 air={air(q)}
                 solo={onScreenCount === 1 && q.screen !== null}
+                overlay={tab === 'approved' && q.id === overlay}
                 now={now}
                 current={q.id === cur}
                 tabbable={cur ? q.id === cur : i === 0}

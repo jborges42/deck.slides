@@ -145,7 +145,7 @@ export function SceneView(p: SceneProps) {
  * inteiro. A conta é em proporção (tudo escala com --u), então o resultado é o mesmo no telão, no monitor e na
  * miniatura.
  */
-function useFit(
+export function useFit(
   box: RefObject<HTMLElement | null>,
   content: RefObject<HTMLElement | null>,
   report: SceneProps['report'],
@@ -599,7 +599,7 @@ function TimerScene({ scene, content, live, offset, mode, theme, box, amber }: W
 }
 
 /** Re-renderiza só enquanto o cronômetro corre: parado ou em miniatura, nada fica acordando a página. */
-function Ticking({ children }: { children: (now: number) => ReactNode }) {
+export function Ticking({ children }: { children: (now: number) => ReactNode }) {
   return children(useNow(200))
 }
 

@@ -364,7 +364,7 @@ describe('cada ação da moderação chega em tempo real às audiências certas'
 
       // Destaque: só ela na tela. A tela recebe o formato público (sem participante, original, status ou marcação).
       const first = await step(`${maria.id}/screen`, { on: true, solo: true }, [pub(maria, 'Maria S.')], true)
-      assert.deepEqual(Object.keys(first.screen).sort(), ['event', 'program', 'publicUrl', 'questions', 'serverNow'])
+      assert.deepEqual(Object.keys(first.screen).sort(), ['event', 'program', 'publicUrl', 'questionOverlay', 'questions', 'serverNow'])
       // Acrescentar: entra no fim da fila; anônima aparece sem autor.
       await step(`${anon.id}/screen`, { on: true }, [pub(maria, 'Maria S.'), pub(anon, null)])
       // Pendente do celular: exibir já aprova, e o autor vê a própria pergunta na tela.

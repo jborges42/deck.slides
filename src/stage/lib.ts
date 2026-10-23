@@ -3,10 +3,13 @@
 import type { CSSProperties } from 'react'
 import { contrast } from '../../shared/screen-theme.ts'
 import { clock } from '../lib/format.ts'
-import type { Theme, TimerState } from '../../shared/types.ts'
+import type { LiveState, Theme, TimerState } from '../../shared/types.ts'
 
 /** Medida em pixels do canvas lógico (altura 1080) convertida para CSS: escala junto com o palco. */
 export const u = (n: number) => `calc(var(--u) * ${Math.round(n * 100) / 100})`
+
+/** Espaço entre a linha do logo/rodapé e o conteúdo (e abaixo do cronômetro sobre o conteúdo). */
+export const GAP = 40
 
 /**
  * Faixa da marca (BrandStrip em duas linhas) fixa no canto inferior direito de toda cena. Corpo de 30: a frase
@@ -18,6 +21,31 @@ export const BRAND_W = 900 // largura da linha mais longa, com folga
 
 /** Margem de segurança em unidades do canvas (o tema guarda em % da altura). */
 export const safeOf = (theme: Pick<Theme, 'safe'>) => theme.safe * 10.8
+
+/**
+ * Cronômetro sobre o conteúdo: respiro do cartão (vertical, horizontal), rótulo e espaço até os algarismos, algarismos,
+ * mensagem final e largura máxima do texto. Corpos × escala do tema.
+ */
+export const TIMER_CARD = { pad: [20, 32], label: 32, gap: 8, digits: 120, message: 64, width: 640 } as const
+
+type OverlayTheme = Pick<Theme, 'safe' | 'logo' | 'logoPosition' | 'logoSize' | 'scale'>
+
+/** Topo do cronômetro sobre o conteúdo: na margem de segurança ou, com o logo do tema no mesmo canto, logo abaixo dele. */
+export function timerOverlayTop(theme: OverlayTheme, corner: LiveState['timerCorner']): number {
+  const safe = safeOf(theme)
+  return theme.logo && theme.logoPosition === corner ? safe + theme.logoSize + 24 : safe
+}
+
+/**
+ * Topo da área da pergunta sobre o conteúdo: o da cena ou, com o cronômetro visível, abaixo da altura reservada a
+ * ele. A reserva estima o rótulo numa linha; uma segunda linha (ou a mensagem final em duas) cabe no GAP.
+ */
+export function questionOverlayTop(theme: OverlayTheme, sceneTop: number, timer: { corner: LiveState['timerCorner']; label: string } | null): number {
+  if (!timer) return sceneTop
+  const t = TIMER_CARD
+  const height = 2 * t.pad[0] + ((timer.label.trim() ? t.label * 1.25 + t.gap : 0) + t.digits * 1.1) * theme.scale
+  return Math.max(sceneTop, timerOverlayTop(theme, timer.corner) + height + GAP)
+}
 
 /**
  * Endereço exibido (sem "https://") nas partes entre as quais a linha pode quebrar: antes de cada ponto do domínio e

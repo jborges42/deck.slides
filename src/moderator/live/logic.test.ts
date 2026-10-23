@@ -2,7 +2,22 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { defaultLive, type Scene, type SceneContent, type TimerState } from '../../../shared/types.ts'
-import { embedUrl, folderEnd, folderOf, moveFolder, moveId, parseDuration, playable, sameDraft, sceneDetail, takeBlocker, timerReadout } from './logic.ts'
+import {
+  DEFAULT_CONTENT,
+  embedUrl,
+  folderEnd,
+  folderOf,
+  manualTimer,
+  moveFolder,
+  moveId,
+  parseDuration,
+  playable,
+  sameDraft,
+  sceneDetail,
+  takeBlocker,
+  timerInUse,
+  timerReadout,
+} from './logic.ts'
 
 test('duração: minutos soltos, mm:ss e h:mm:ss', () => {
   assert.equal(parseDuration('5'), 300)
@@ -125,4 +140,31 @@ test('cena de entrada no roteiro: sem a entrada aberta, não promete QR nem ende
   assert.equal(sceneDetail(s), 'QR code, endereço e PIN')
   assert.equal(sceneDetail(s, false), 'Só o PIN: evento só com convidados')
   assert.equal(takeBlocker(s, null), null)
+})
+
+test('duração da fala definida à mão: regressivo com limites próprios, nada herdado da cena anterior', () => {
+  const cmd = manualTimer(90)
+  assert.deepEqual(cmd, {
+    op: 'timer',
+    action: 'set',
+    mode: 'countdown',
+    durationMs: 90_000,
+    label: '',
+    warnMs: 60_000,
+    criticalMs: 15_000,
+    onEnd: 'overtime',
+    endText: '',
+  })
+  // Campo omitido manteria o do cronômetro anterior (por exemplo, a mensagem do Intervalo).
+  for (const k of ['warnMs', 'criticalMs', 'onEnd', 'endText']) assert.notEqual((cmd as Record<string, unknown>)[k], undefined, k)
+})
+
+test('controles do cronômetro no No ar: com cena de cronômetro, correndo ou sobre o conteúdo; senão, não', () => {
+  const live = defaultLive()
+  const timer = { id: 't', name: 'Fala', position: 0, type: 'timer', content: DEFAULT_CONTENT.timer } as Scene
+  assert.equal(timerInUse(live, null), false)
+  assert.equal(timerInUse(live, title('a')), false)
+  assert.equal(timerInUse(live, timer), true)
+  assert.equal(timerInUse({ ...live, timerOverlay: true }, title('a')), true)
+  assert.equal(timerInUse({ ...live, timer: { ...live.timer, running: true } }, null), true)
 })

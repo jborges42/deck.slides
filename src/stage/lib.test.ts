@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { contrast, deriveTheme } from '../../shared/screen-theme.ts'
-import { addressParts, amberOn, group, timerFace, type TimerSpec } from './lib.ts'
+import { addressParts, amberOn, group, questionOverlayTop, safeOf, timerFace, timerOverlayTop, type TimerSpec } from './lib.ts'
 
 const countdown: TimerSpec = { mode: 'countdown', durationMs: 600_000, warnMs: 120_000, criticalMs: 30_000, onEnd: 'overtime', endText: '' }
 
@@ -59,4 +59,35 @@ test('PIN e códigos em duas metades', () => {
   assert.equal(group('12345678'), '1234 5678')
   assert.equal(group('1234'), '1234')
   assert.equal(group('12345'), '12345')
+})
+
+const look = { safe: 5, logo: null, logoPosition: 'top-left', logoSize: 96, scale: 1 } as const
+const safe = safeOf(look)
+
+test('cronômetro sobre o conteúdo: na margem de segurança ou logo abaixo do logo do mesmo canto', () => {
+  assert.equal(timerOverlayTop(look, 'top-left'), safe)
+  assert.equal(timerOverlayTop(look, 'top-right'), safe)
+  assert.equal(timerOverlayTop({ ...look, logo: '/logo.png' }, 'top-left'), safe + 96 + 24)
+  assert.equal(timerOverlayTop({ ...look, logo: '/logo.png', logoPosition: 'top-right' }, 'top-right'), safe + 96 + 24)
+  // Logo no outro canto, embaixo, na posição "Oculta" ou sem logo enviado: fica na margem.
+  assert.equal(timerOverlayTop({ ...look, logo: '/logo.png' }, 'top-right'), safe)
+  assert.equal(timerOverlayTop({ ...look, logo: '/logo.png', logoPosition: 'bottom-left' }, 'top-left'), safe)
+  assert.equal(timerOverlayTop({ ...look, logo: '/logo.png', logoPosition: 'none' }, 'top-left'), safe)
+  assert.equal(timerOverlayTop({ ...look, logoPosition: 'top-right' }, 'top-right'), safe)
+})
+
+test('pergunta sobre o conteúdo: não invade a altura reservada ao cronômetro', () => {
+  // Sem cronômetro: o topo da área da cena.
+  assert.equal(questionOverlayTop(look, safe, null), safe)
+  // Cartão: respiro 20 + 20, algarismos 120 × 1,1; rótulo 32 × 1,25 + 8; e o GAP de 40.
+  const plain = questionOverlayTop(look, safe, { corner: 'top-left', label: '' })
+  assert.equal(plain, safe + 40 + 132 + 40)
+  assert.equal(questionOverlayTop(look, safe, { corner: 'top-right', label: 'Ana Souza' }), plain + 48)
+  assert.equal(questionOverlayTop(look, safe, { corner: 'top-left', label: '   ' }), plain) // rótulo em branco não aparece
+  assert.ok(questionOverlayTop({ ...look, scale: 1.5 }, safe, { corner: 'top-left', label: '' }) > plain)
+  // Cronômetro abaixo do logo do mesmo canto: a reserva desce junto.
+  const logo = { ...look, logo: '/logo.png' }
+  assert.equal(questionOverlayTop(logo, safe + 96 + 40, { corner: 'top-left', label: '' }), plain + 96 + 24)
+  // Área da cena já mais baixa que o cronômetro: vale a da cena.
+  assert.equal(questionOverlayTop(look, 500, { corner: 'top-left', label: 'Ana' }), 500)
 })

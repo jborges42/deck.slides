@@ -13,6 +13,7 @@ import {
   eventRow,
   media,
   participants,
+  question,
   questions,
   scene,
   scenes,
@@ -22,13 +23,14 @@ import {
   type EventRow,
   type ParticipantRow,
 } from './model.ts'
-import type {
-  Counts,
-  ModeratorSnapshot,
-  ParticipantSnapshot,
-  QuestionStatus,
-  ReactionKind,
-  ScreenSnapshot,
+import {
+  overlayQuestion,
+  type Counts,
+  type ModeratorSnapshot,
+  type ParticipantSnapshot,
+  type QuestionStatus,
+  type ReactionKind,
+  type ScreenSnapshot,
 } from '../shared/types.ts'
 
 type Audience = 'moderator' | 'screen' | 'participant'
@@ -140,7 +142,8 @@ async function moderatorSnapshot(r: EventRow): Promise<ModeratorSnapshot> {
 
 async function screenSnapshot(r: EventRow): Promise<ScreenSnapshot> {
   const ev = toEventInfo(r)
-  const program = await scene(r.id, ev.live.program)
+  const overlayId = ev.live.questionOverlay
+  const [program, overlay] = await Promise.all([scene(r.id, ev.live.program), overlayId ? question(r.id, overlayId) : null])
   return {
     serverNow: Date.now(),
     publicUrl: PUBLIC_URL,
@@ -155,6 +158,7 @@ async function screenSnapshot(r: EventRow): Promise<ScreenSnapshot> {
     },
     program,
     questions: program?.type === 'questions' ? await screenQuestions(r.id, program.content.max, ev.settings.screenName) : [],
+    questionOverlay: overlayQuestion(overlay ? [overlay] : [], overlayId, ev.settings.screenName),
   }
 }
 

@@ -1,10 +1,12 @@
-// Sobreposições do palco: faixa de entrada (QR, endereço e PIN) e reações da plateia.
+// Sobreposições do palco: faixa de entrada (QR, endereço e PIN), reações da plateia e, sobre o conteúdo,
+// cronômetro e pergunta.
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { renderSVG } from 'uqr'
 import { cx } from '../ui'
-import { addressParts, card, group, safeOf, u } from './lib.ts'
+import { TIMER_CARD, addressParts, card, group, safeOf, timerFace, timerOverlayTop, u, type TimerFace } from './lib.ts'
+import { Crossfade, Ticking, useFit, type Box } from './scenes.tsx'
 import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
-import { REACTIONS, type ReactionKind, type Theme } from '../../shared/types.ts'
+import { REACTIONS, timerElapsed, type LiveState, type PublicQuestion, type ReactionKind, type Theme, type TimerState } from '../../shared/types.ts'
 
 // ---------- entrada ----------
 
@@ -234,6 +236,131 @@ function Lane({ theme, totals, sceneId, bottom }: ReactionsProps) {
           +{extra.toLocaleString('pt-BR')}
         </span>
       )}
+    </div>
+  )
+}
+
+// ---------- sobre o conteúdo ----------
+
+interface TimerOverlayProps {
+  timer: TimerState
+  offset: number
+  theme: Theme
+  corner: LiveState['timerCorner']
+  /** Âmbar do aviso com contraste garantido sobre o cartão (`surface`), não sobre o fundo. */
+  amber: string
+}
+
+/**
+ * Cronômetro ao vivo num canto de cima, sobre qualquer cena. Cartão sempre sólido: fica sobre slide, imagem e vídeo
+ * e precisa de contraste garantido. Só ele re-renderiza enquanto corre; parado, nada acorda a página.
+ */
+export function TimerOverlay({ timer, offset, ...rest }: TimerOverlayProps) {
+  const view = (elapsed: number) => <TimerCard face={timerFace(timer, elapsed)} label={timer.label.trim()} {...rest} />
+  if (timer.running) return <Ticking>{(now) => view(timerElapsed(timer, now + offset))}</Ticking>
+  return view(timerElapsed(timer, Date.now() + offset))
+}
+
+function TimerCard({ face, label, theme, corner, amber }: Omit<TimerOverlayProps, 'timer' | 'offset'> & { face: TimerFace; label: string }) {
+  const s = theme.scale
+  const t = TIMER_CARD
+  const right = corner === 'top-right'
+  return (
+    <div
+      className={cx('pointer-events-none absolute flex flex-col bg-surface', right && 'items-end text-right')}
+      style={{
+        top: u(timerOverlayTop(theme, corner)),
+        [right ? 'right' : 'left']: u(safeOf(theme)),
+        borderRadius: u(theme.radius),
+        padding: `${u(t.pad[0])} ${u(t.pad[1])}`,
+      }}
+    >
+      {label && (
+        <p
+          className="font-body text-fg-muted wrap-anywhere"
+          style={{ fontSize: u(t.label * s), lineHeight: 1.25, maxWidth: u(t.width * s), marginBottom: u(t.gap * s) }}
+        >
+          {label}
+        </p>
+      )}
+      <p
+        role="timer"
+        className={cx(
+          face.message ? 'font-heading tracking-tight text-balance wrap-anywhere' : 'font-numbers font-semibold whitespace-nowrap tabular-nums',
+          face.tone === 'critical' ? 'text-critical' : face.tone === 'normal' && 'text-fg',
+        )}
+        style={{
+          fontSize: u((face.message ? t.message : t.digits) * s),
+          lineHeight: face.message ? 1.15 : 1.1,
+          fontWeight: face.message ? 'var(--heading-weight)' : undefined,
+          maxWidth: face.message ? u(t.width * s) : undefined,
+          color: face.tone === 'warn' ? amber : undefined,
+        }}
+      >
+        {face.text}
+      </p>
+    </div>
+  )
+}
+
+interface QuestionOverlayProps {
+  /** null = nenhuma: a anterior sai na mesma fusão. */
+  q: PublicQuestion | null
+  theme: Theme
+  /** Área onde o cartão cabe: base na da cena; topo na da cena ou abaixo do cronômetro (questionOverlayTop). */
+  box: Box
+  /** Fusão ao trocar, aparecer ou sair; 0 = corte. */
+  ms: number
+  report: (overflow: boolean) => void
+}
+
+/**
+ * Pergunta sobre o conteúdo: cartão sólido na base da área da cena, que cresce para cima. Um véu da cor de fundo
+ * recua a cena (que continua visível): sem ele, no tema padrão o cartão quase some no fundo e corta o título ao meio.
+ */
+export function QuestionOverlay({ q, ms, ...rest }: QuestionOverlayProps) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      <Crossfade id={q ? JSON.stringify([q.id, q.text, q.author]) : 'none'} ms={ms}>
+        {q && (
+          <>
+            <div className="absolute inset-0 bg-canvas" style={{ opacity: QUESTION_VEIL }} />
+            <QuestionOnTop q={q} {...rest} />
+          </>
+        )}
+      </Crossfade>
+    </div>
+  )
+}
+
+const QUESTION_VEIL = 0.7
+
+/** Texto de 72 até 40 (× escala) para caber; nem assim, avisa o console. Nunca trunca. */
+function QuestionOnTop({ q, theme, box, report }: Omit<QuestionOverlayProps, 'ms'> & { q: PublicQuestion }) {
+  const s = theme.scale
+  const outer = useRef<HTMLDivElement>(null)
+  const inner = useRef<HTMLDivElement>(null)
+  useFit(outer, inner, report, JSON.stringify([q.text, q.author, box, s, theme.fonts, theme.aspect]), { max: 72 * s, min: 40 * s })
+  return (
+    <div
+      ref={outer}
+      className={cx('absolute flex flex-col justify-end', theme.align === 'center' ? 'items-center' : 'items-start')}
+      style={{ top: u(box.top), bottom: u(box.bottom), left: u(box.side), right: u(box.side) }}
+    >
+      <div
+        ref={inner}
+        className="shrink-0 bg-surface text-left font-body wrap-anywhere"
+        style={{ maxWidth: u(1536), borderRadius: u(theme.radius), padding: `${u(48)} ${u(64)}` }}
+      >
+        <p className="font-semibold text-fg" style={{ fontSize: `calc(var(--u) * var(--fit, ${72 * s}))`, lineHeight: 1.2 }}>
+          {q.text}
+        </p>
+        {q.author && (
+          <p className="text-fg-muted" style={{ fontSize: u(40 * s), lineHeight: 1.25, marginTop: u(24 * s) }}>
+            {q.author}
+          </p>
+        )}
+      </div>
     </div>
   )
 }

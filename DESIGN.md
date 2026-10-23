@@ -119,6 +119,7 @@ Reações (rótulo pt-BR + **emoji colorido do Twemoji**, a única exceção à 
 - **Pastas no roteiro** (por momento ou palestrante): uma cena do tipo `section` é o título da pasta, e as cenas abaixo dela são dela até a próxima pasta. O título recolhe e abre as cenas (estado guardado neste computador), mostra quantas são e, recolhido, avisa “No ar” ou “Prévia” se uma delas estiver lá. “+” cria cena no fim da pasta; arrastar o título leva a pasta inteira, sem nunca engolir as cenas soltas do começo. Pastas nunca vão para a prévia nem para a tela, e numeração, teclas 1 a 0 e ↑/↓ contam só as cenas.
 - **Apresentação** (`slides`): os slides do palestrante como imagens. O PDF, exportado do PowerPoint, Keynote, Google Slides ou Canva, é convertido no navegador do console pelo pdf.js (`src/moderator/live/slides.ts`): cada página vira um WebP de até 1920 × 1080 enviado à biblioteca. Imagens também servem. Animações e vídeos dos slides não vêm junto. No ar, o slide muda sem passar pela prévia (← → ou Page Up/Down, as teclas dos passadores; ou clique na miniatura). Cada apresentação guarda o próprio slide em `live.slides`, então voltar a ela retoma de onde parou, e na prévia o clique escolhe de onde ela começa.
 - Editar a cena que está no ar não publica sozinho: as mudanças ficam locais até "Atualizar no ar" (botão `program`).
+- **Sobre o conteúdo** (controles do No ar): a chave “Cronômetro sobre o conteúdo” mostra os controles do cronômetro (os mesmos da cena de cronômetro, tecla T inclusive) e a posição, “Em cima à esquerda” (padrão) ou “Em cima à direita”. Sem cena de cronômetro no ar, “Duração da fala” + “Definir tempo” (ou Enter) prepara a contagem regressiva sem trocar a cena; com ela no ar, o campo some, porque definir à mão desvincula o relógio da cena. A pergunta sobreposta (tecla S na fila) aparece em “Pergunta sobre o conteúdo”, com texto em até 2 linhas, autor e “Remover de cima do conteúdo” (com desfazer). Na fila, “Sobrepor ao conteúdo” fica no menu “Mais ações”: um quarto botão não cabe na linha da coluna de 440 px. Ela é independente do “Destacar” e da cena de perguntas.
 
 **Atalhos (ignorados durante digitação e com diálogo aberto):**
 
@@ -130,11 +131,12 @@ Reações (rótulo pt-BR + **emoji colorido do Twemoji**, a única exceção à 
 | ↑ / ↓ | Cena anterior / seguinte para a prévia |
 | ← / → · Page Up / Page Down | Slide anterior / seguinte da apresentação no ar (passador sem fio) |
 | B | Tela de espera liga/desliga |
-| T | Cronômetro inicia/pausa |
+| T | Cronômetro inicia/pausa (com cena de cronômetro no ar, cronômetro correndo ou sobre o conteúdo) |
 | P | Vídeo toca/pausa |
 | J / K | Próxima / anterior na fila de perguntas |
 | A / R / E | Aprovar / Rejeitar / Editar a pergunta selecionada |
 | D | Destacar na tela (só esta pergunta) |
+| S | Sobrepor a pergunta ao conteúdo no ar; de novo, remove |
 | M | Marcar como respondida |
 | ⌘Z / Ctrl+Z | Desfazer a última ação |
 | ? | Folha de atalhos |
@@ -158,7 +160,8 @@ Cada botão com atalho mostra a dica (`kbd` / `Tooltip`).
 - Margem de segurança padrão de 5 %, com texto e sobreposições dentro dela. O fundo vai até a borda.
 - Pergunta em destaque: 80 px (mínimo 64), até 6 linhas, coluna de 1536 px, autor em 40 px. Mural: 3 perguntas por padrão (até 6), de 56 a 40 px. **Nunca truncar**: se não couber, avisar o console (`onOverflow`).
 - Cronômetro: algarismos tabulares, âmbar no aviso, vermelho no crítico. No zero: tempo extra em "+m:ss" vermelho, parar em 00:00 ou mostrar a mensagem.
-- Reações: faixa no canto inferior direito, dentro da área segura, ícones de 64 px. Ocultas em cenas de vídeo.
+- Reações: faixa no canto inferior direito, dentro da área segura, ícones de 64 px. Ocultas em cenas de vídeo e sob a pergunta sobre o conteúdo.
+- **Sobre o conteúdo**: cronômetro e pergunta ficam por cima da cena no ar, sem trocá-la. O cronômetro (cerca de 120 de altura, mesmas cores de aviso e crítico) vai no canto de cima escolhido, dentro da área segura. A pergunta vai num cartão de até 1536 de largura na base da área do texto, acima da linha da marca, de 72 a 40 conforme o comprimento (nunca truncada), com o autor; um véu da cor de fundo (70%) recua a cena, que continua visível. As duas somem na tela de espera, sem nada no ar e nas miniaturas; o cronômetro também some com uma cena de cronômetro no ar (repetiria). Com a pergunta na tela, as reações e a faixa de entrada ficam ocultas: o cartão ocupa a base (e, com o cronômetro também ligado, sobraria pouco espaço para a pergunta). Cronômetro e faixa de entrada ficam acima do véu.
 - Página web: a maioria dos sites grandes proíbe aparecer dentro de outra página (`X-Frame-Options`, CSP `frame-ancestors`, ou bloqueio de robôs com 403), e o navegador obedece. Por isso:
   - Links com versão própria para incorporar viram essa versão (`embedUrl`): YouTube, Vimeo, apresentação, documento e planilha do Google, Google Drive e Canva.
   - Ao salvar o endereço, o servidor verifica o site (`POST /events/:id/embed-check`, em `server/embed.ts`). A verificação lê só os cabeçalhos, aceita só https, recusa rede interna na conexão, segue até 4 redirecionamentos (http vira https) e tem limite de 6 s.

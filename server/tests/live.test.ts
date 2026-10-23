@@ -457,7 +457,7 @@ describe('audiências', () => {
     try {
       const first = await screen.next<ScreenSnapshot>('state')
       assert.equal(first.program, null)
-      assert.deepEqual(Object.keys(first).sort(), ['event', 'program', 'publicUrl', 'questions', 'serverNow'])
+      assert.deepEqual(Object.keys(first).sort(), ['event', 'program', 'publicUrl', 'questionOverlay', 'questions', 'serverNow'])
       assert.deepEqual(Object.keys(first.event).sort(), ['id', 'live', 'name', 'openJoin', 'pin', 'reactions', 'theme'])
 
       await ok(id, { op: 'preview', sceneId: title.id })

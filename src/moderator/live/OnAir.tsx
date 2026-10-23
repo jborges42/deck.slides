@@ -1,4 +1,5 @@
-// Controles do que está no ar: tela de espera, sobreposições, cronômetro, vídeo e slides da apresentação.
+// Controles do que está no ar: tela de espera, sobreposições (faixa, reações, cronômetro e pergunta sobre o
+// conteúdo), cronômetro, vídeo e slides da apresentação.
 // Tudo aqui age direto na tela; o estado mostrado é sempre o do último snapshot.
 import { useEffect, useRef, useState } from 'react'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/ArrowCounterClockwise'
@@ -7,10 +8,12 @@ import { ArrowRightIcon } from '@phosphor-icons/react/ArrowRight'
 import { PauseIcon } from '@phosphor-icons/react/Pause'
 import { PlayIcon } from '@phosphor-icons/react/Play'
 import { ProjectorScreenIcon } from '@phosphor-icons/react/ProjectorScreen'
+import { TimerIcon } from '@phosphor-icons/react/Timer'
+import { XIcon } from '@phosphor-icons/react/X'
 import { clock } from '../../lib/format.ts'
 import { useNow } from '../../lib/stream.ts'
-import { Button, Kbd, Switch, Tooltip, cx } from '../../ui'
-import { timerReadout, type Tone } from './logic.ts'
+import { Button, Field, Input, Kbd, Segmented, Switch, Tooltip, cx, undoable, type Option } from '../../ui'
+import { manualTimer, parseDuration, timerInUse, timerReadout, type Tone } from './logic.ts'
 import {
   playbackPosition,
   slideIndex,
@@ -18,6 +21,7 @@ import {
   type LiveCommand,
   type LiveState,
   type PlaybackState,
+  type PublicQuestion,
   type Scene,
   type SceneContent,
   type TimerState,
@@ -31,6 +35,7 @@ export function OnAirControls({
   offset,
   openJoin,
   onOpenJoin,
+  question,
   command,
 }: {
   live: LiveState
@@ -39,9 +44,16 @@ export function OnAirControls({
   openJoin: boolean
   /** Liga a entrada aberta do evento (o QR só existe com ela). */
   onOpenJoin: () => void
+  /** Pergunta sobre o conteúdo, já resolvida (`overlayQuestion`). */
+  question: PublicQuestion | null
   command: Command
 }) {
-  const timer = program?.type === 'timer' || live.timer.running ? live.timer : null
+  const timer = timerInUse(live, program) ? live.timer : null
+  const removeQuestion = async () => {
+    const before = live.questionOverlay
+    if (await command({ op: 'questionOverlay', questionId: null }))
+      undoable('Pergunta removida de cima do conteúdo.', () => command({ op: 'questionOverlay', questionId: before }))
+  }
   const video = program?.type === 'video' && live.playback.sceneId === program.id ? program.content : null
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
@@ -57,6 +69,7 @@ export function OnAirControls({
       </Button>
       <Switch label="Entrada (QR e PIN)" checked={live.overlays.join} onChange={(join) => void command({ op: 'overlays', join })} />
       <Switch label="Reações na tela" checked={live.overlays.reactions} onChange={(reactions) => void command({ op: 'overlays', reactions })} />
+      <Switch label="Cronômetro sobre o conteúdo" checked={live.timerOverlay} onChange={(on) => void command({ op: 'timerOverlay', on })} />
       {/* Só convidados: faixa e cena de entrada mostram o PIN sem QR. Sem este aviso, parece que o QR não existe. */}
       {!openJoin && (
         <div className="flex basis-full items-center gap-3 text-meta text-fg-subtle">
@@ -66,7 +79,35 @@ export function OnAirControls({
           </Button>
         </div>
       )}
+      {question && (
+        <div className="flex basis-full items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-meta text-fg-muted">Pergunta sobre o conteúdo</span>
+            <p className="line-clamp-2 text-read text-fg">{question.text}</p>
+            {question.author && <span className="text-meta text-fg-subtle">{question.author}</span>}
+          </div>
+          <Button size="sm" icon={<XIcon />} onClick={() => void removeQuestion()}>
+            Remover de cima do conteúdo
+          </Button>
+        </div>
+      )}
       {timer && <TimerControls t={timer} offset={offset} command={command} />}
+      {live.timerOverlay && (
+        <div className="flex basis-full flex-wrap items-start gap-x-4 gap-y-2">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-meta font-medium text-fg-muted">Posição na tela</span>
+            <Segmented
+              size="sm"
+              label="Posição do cronômetro"
+              value={live.timerCorner}
+              onChange={(corner) => void command({ op: 'timerOverlay', corner })}
+              options={CORNERS}
+            />
+          </div>
+          {/* Definir à mão desvincula o cronômetro da cena: a cena de cronômetro no ar ficaria com a duração parada. */}
+          {program?.type !== 'timer' && <SetTimer onSet={(s) => command(manualTimer(s))} />}
+        </div>
+      )}
       {video && <VideoControls p={live.playback} content={video} offset={offset} command={command} />}
       {program?.type === 'slides' && <SlidesControls scene={program} live={live} command={command} />}
     </div>
@@ -120,6 +161,37 @@ function SlidesControls({ scene, live, command }: { scene: Extract<Scene, { type
         ))}
       </ol>
     </div>
+  )
+}
+
+const CORNERS: Option<LiveState['timerCorner']>[] = [
+  { value: 'top-left', label: 'Em cima à esquerda' },
+  { value: 'top-right', label: 'Em cima à direita' },
+]
+
+/** Duração da fala sem cena de cronômetro, com a mesma leitura do inspetor ("5" = 5 min, "1:30"). */
+function SetTimer({ onSet }: { onSet: (seconds: number) => Promise<unknown> }) {
+  const [text, setText] = useState('')
+  const parsed = parseDuration(text)
+  const seconds = parsed !== null && parsed >= 1 && parsed <= 86_400 ? parsed : null
+  const midway = /^\s*$|:\s*$/.test(text) // vazio ou "1:": ainda está sendo digitado
+  return (
+    // Formulário: Enter no campo também define.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (seconds !== null) void onSet(seconds).then((ok) => ok && setText(''))
+      }}
+    >
+      <Field label="Duração da fala" error={seconds !== null || midway ? null : 'Use minutos e segundos, como 05:00.'}>
+        <div className="flex gap-2">
+          <Input value={text} inputMode="numeric" placeholder="mm:ss" className="w-20" onChange={(e) => setText(e.target.value)} />
+          <Button type="submit" icon={<TimerIcon />} disabled={seconds === null}>
+            Definir tempo
+          </Button>
+        </div>
+      </Field>
+    </form>
   )
 }
 

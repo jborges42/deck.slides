@@ -5,12 +5,13 @@
 // Canvas lógico de 1080 de altura (largura pela proporção do tema), encaixado no pai com container queries.
 // Toda medida é unidade do canvas (--u = 1/1080 da altura): o layout é idêntico em qualquer tamanho e o texto
 // continua nítido (nada de transform: scale). Camadas, de baixo para cima: fundo (cor e imagem com véu) ·
-// cena ou tela de espera · logo e rodapé · sobreposições (entrada, reações) · preto da tela de espera.
+// cena ou tela de espera · logo e rodapé · pergunta sobre o conteúdo (com véu) · sobreposições (entrada, reações,
+// cronômetro sobre o conteúdo) · marca fixa · preto da tela de espera.
 import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import { CANVAS, eventPalette, fontVars, loadThemeFonts, tokenVars } from '../lib/theme.ts'
 import { BrandStrip, cx } from '../ui'
-import { BRAND, BRAND_FONT, BRAND_W, amberOn, safeOf, u } from './lib.ts'
-import { JoinBand, Reactions, bandHeight } from './overlays.tsx'
+import { BRAND, BRAND_FONT, BRAND_W, GAP, amberOn, questionOverlayTop, safeOf, u } from './lib.ts'
+import { JoinBand, QuestionOverlay, Reactions, TimerOverlay, bandHeight } from './overlays.tsx'
 import { Crossfade, SceneView, type Box } from './scenes.tsx'
 import type { LiveState, PublicQuestion, ReactionKind, Scene, Theme } from '../../shared/types.ts'
 
@@ -26,8 +27,13 @@ export interface StageProps {
   questions: PublicQuestion[]
   /** Curtidas ao vivo por pergunta (vindas de `counts.likes`); sobrepõem `questions[].likes`. */
   likes?: Record<string, number>
-  /** Cronômetro, vídeo e sobreposições. O cronômetro só vale para a cena se `timer.sceneId === scene.id`. */
-  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'transition' | 'slides'>
+  /**
+   * Cronômetro, vídeo e sobreposições. O cronômetro só vale para a cena se `timer.sceneId === scene.id`; com
+   * `timerOverlay`, aparece sobre qualquer outra cena, no canto `timerCorner`.
+   */
+  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'transition' | 'slides' | 'timerOverlay' | 'timerCorner'>
+  /** Pergunta sobre o conteúdo (use `overlayQuestion` de shared/types; na tela, `questionOverlay` do snapshot). */
+  questionOverlay?: PublicQuestion | null
   /** Tela de espera ativa (tecla B). Só faz sentido no telão e no monitor No ar. */
   standby: boolean
   /** Totais de reações da cena exibida; aumentos entre renders viram animação. */
@@ -42,19 +48,27 @@ export interface StageProps {
   className?: string
 }
 
-const GAP = 40 // entre a linha do logo/rodapé e o conteúdo
 const FOOTER = 36
 
-const palettes = new Map<string, { palette: ReturnType<typeof eventPalette>; amber: string }>()
+const palettes = new Map<string, { palette: ReturnType<typeof eventPalette>; amber: string; cardAmber: string }>()
 
-/** Paleta do evento (e o âmbar do cronômetro), compartilhada entre palcos: o roteiro pode ter dezenas de miniaturas. */
+/**
+ * Paleta do evento e o âmbar do cronômetro (sobre o fundo e sobre o cartão do cronômetro sobre o conteúdo),
+ * compartilhada entre palcos: o roteiro pode ter dezenas de miniaturas.
+ */
 function paletteOf(theme: Theme) {
   const key = JSON.stringify([theme.brand, theme.background, theme.mode, theme.contrast, theme.overrides])
   let p = palettes.get(key)
   if (!p) {
     if (palettes.size > 50) palettes.clear() // o editor de aparência gera uma por cor arrastada
     const palette = eventPalette(theme)
-    p = { palette, amber: amberOn(palette.tokens.canvas, palette.mode === 'dark', theme.contrast === 'high' ? 7 : 4.5) }
+    const min = theme.contrast === 'high' ? 7 : 4.5
+    p = {
+      palette,
+      amber: amberOn(palette.tokens.canvas, palette.mode === 'dark', min),
+      // No tema padrão, o âmbar do fundo fica abaixo de 4,5:1 sobre o cartão (#0C4DA8).
+      cardAmber: amberOn(palette.tokens.surface, palette.mode === 'dark', min),
+    }
     palettes.set(key, p)
   }
   return p
@@ -83,21 +97,40 @@ export function Stage(props: StageProps) {
   const { theme, scene, live, mode } = props
   const thumb = mode === 'thumb'
   const { w, h } = CANVAS[theme.aspect]
-  const { palette, amber } = paletteOf(theme)
+  const { palette, amber, cardAmber } = paletteOf(theme)
 
   useEffect(() => loadThemeFonts(theme.fonts), [theme.fonts])
 
-  // Aviso de texto que não cabe: só quando muda. A cena exibida mede; as demais (e a tela de espera) cabem.
+  // Aviso de texto que não cabe: só quando muda. A cena exibida mede (as demais e a tela de espera cabem), e a
+  // pergunta sobre o conteúdo também: vale o OU dos dois.
   const onOverflow = useRef(props.onOverflow)
   useLayoutEffect(() => {
     onOverflow.current = props.onOverflow
   })
+  const over = useRef({ scene: false, question: false })
   const reported = useRef<boolean | null>(null)
-  const report = useCallback((overflow: boolean) => {
+  const emit = useCallback(() => {
+    const overflow = over.current.scene || over.current.question
     if (reported.current === overflow) return
     reported.current = overflow
     onOverflow.current?.(overflow)
   }, [])
+  const report = useCallback(
+    (overflow: boolean) => {
+      over.current.scene = overflow
+      emit()
+    },
+    [emit],
+  )
+  // Sem pergunta sobre o conteúdo, nunca muda: o aviso segue só a cena, como antes.
+  const reportQuestion = useCallback(
+    (overflow: boolean) => {
+      if (over.current.question === overflow) return
+      over.current.question = overflow
+      emit()
+    },
+    [emit],
+  )
 
   const shown = props.standby ? null : scene // null = tela de espera
   const black = !shown && theme.standby === 'black'
@@ -108,12 +141,20 @@ export function Stage(props: StageProps) {
 
   const fadeMs = thumb || live.transition !== 'fade' ? 0 : theme.transitionMs
   const box = layout(theme, black ? scene : shown) // sob o preto, a cena guarda o próprio layout: nada pula ao voltar
-  const join = !thumb && live.overlays.join && !black && shown?.type !== 'join' // a cena de entrada já mostra o QR e o PIN
+  // Sobre o conteúdo: só com algo no ar. O cronômetro some sobre a cena de cronômetro (repetiria).
+  const timerOn = !thumb && !!shown && live.timerOverlay && shown.type !== 'timer'
+  const question = (!thumb && shown && props.questionOverlay) || null
+  // A cena de entrada já mostra o QR e o PIN. Com a pergunta sobre o conteúdo, a faixa espera ela sair: com o
+  // cronômetro também ligado, sobrariam menos de 250 de altura para a pergunta.
+  const join = !thumb && live.overlays.join && !black && shown?.type !== 'join' && !question
   const band = bandHeight(theme, !!props.joinUrl)
   // Faixa da marca: na margem de segurança ou, com a faixa de entrada visível, logo acima dela.
   const brand = join ? band + 24 : safeOf(theme)
   // Com a faixa de entrada visível, o texto da cena termina acima dela e da marca (e o aviso de "não cabe" passa a valer).
   const sceneBox = join ? { ...box, bottom: Math.max(box.bottom, brand + BRAND + GAP) } : box
+  useEffect(() => {
+    if (!question) reportQuestion(false)
+  }, [question, reportQuestion])
 
   const view = (s: Scene) => (
     <SceneView
@@ -172,8 +213,20 @@ export function Stage(props: StageProps) {
           {content}
         </Crossfade>
         <Chrome theme={theme} box={box} show={!!shown} ms={fadeMs} />
+        {/* Abaixo da faixa de entrada e do cronômetro: o véu da pergunta recua só a cena; QR e algarismos ficam nítidos. */}
+        {!thumb && (
+          <QuestionOverlay
+            q={question}
+            theme={theme}
+            box={{ ...sceneBox, top: questionOverlayTop(theme, sceneBox.top, timerOn ? { corner: live.timerCorner, label: live.timer.label } : null) }}
+            // Indo para a tela de espera, sai junto com a cena; trocar a pergunta é conteúdo (300 ms no telão, corte no console).
+            ms={!shown ? fadeMs : mode === 'screen' ? 300 : 0}
+            report={reportQuestion}
+          />
+        )}
         {!thumb && <JoinBand theme={theme} joinUrl={props.joinUrl} pin={props.pin} show={join} />}
-        {!thumb && live.overlays.reactions && shown && shown.type !== 'video' && (
+        {/* A pergunta sobre o conteúdo ocupa a base da tela: as reações esperam ela sair. */}
+        {!thumb && live.overlays.reactions && shown && shown.type !== 'video' && !question && (
           <Reactions
             theme={theme}
             totals={props.reactions}
@@ -182,6 +235,7 @@ export function Stage(props: StageProps) {
             bottom={join ? brand + BRAND + 24 : box.bottom}
           />
         )}
+        {timerOn && <TimerOverlay timer={live.timer} offset={props.offset} theme={theme} corner={live.timerCorner} amber={cardAmber} />}
         {/* Marca fixa em toda cena e na tela de espera; a tela de espera preta cobre. */}
         <BrandStrip
           stacked

@@ -146,6 +146,7 @@ function Live({ url, show, onLost }: { url: string; show: Show; onLost?: () => v
         joinUrl={event.openJoin ? `${snap.publicUrl ?? location.origin}/e/${event.id}` : null}
         scene={program}
         questions={snap.questions}
+        questionOverlay={snap.questionOverlay}
         likes={counts.likes}
         live={event.live}
         standby={event.live.standby}

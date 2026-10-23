@@ -149,11 +149,18 @@ const liveCommand = z.discriminatedUnion('op', [
     mode: z.enum(['countdown', 'stopwatch']).optional(),
     durationMs: z.number().int().min(0).max(86_400_000).optional(),
     label: text(200).optional(),
+    // Só no "set"; omitidos, ficam os do cronômetro anterior.
+    warnMs: z.number().int().min(0).max(86_400_000).optional(),
+    criticalMs: z.number().int().min(0).max(86_400_000).optional(),
+    onEnd: z.enum(['overtime', 'stop', 'message']).optional(),
+    endText: text(120).optional(),
   })
     .refine((t) => t.action !== 'add' || t.ms !== undefined, 'Informe quanto tempo somar ao cronômetro.')
     .refine((t) => t.action !== 'set' || (t.mode !== undefined && t.durationMs !== undefined), 'Informe o modo e a duração do cronômetro.'),
   z.object({ op: z.literal('playback'), action: z.enum(['play', 'pause', 'restart']) }),
   z.object({ op: z.literal('slide'), sceneId: z.string().optional(), to: z.enum(['next', 'prev']).or(z.number().int().min(0).max(499)) }),
+  z.object({ op: z.literal('timerOverlay'), on: z.boolean().optional(), corner: z.enum(['top-left', 'top-right']).optional() }),
+  z.object({ op: z.literal('questionOverlay'), questionId: z.string().max(100).nullable() }),
 ])
 
 z.config(z.locales.ptBR())
@@ -514,6 +521,10 @@ moderator.post('/events/:id/live', async (c) => {
             mode: cmd.mode ?? t.mode,
             durationMs: cmd.durationMs ?? t.durationMs,
             label: cmd.label ?? t.label,
+            warnMs: cmd.warnMs ?? t.warnMs,
+            criticalMs: cmd.criticalMs ?? t.criticalMs,
+            onEnd: cmd.onEnd ?? t.onEnd,
+            endText: cmd.endText ?? t.endText,
             running: false,
             startedAt: 0,
             elapsedMs: 0,
@@ -541,9 +552,28 @@ moderator.post('/events/:id/live', async (c) => {
         }
         break
       }
+      case 'timerOverlay':
+        live.timerOverlay = cmd.on ?? live.timerOverlay
+        live.timerCorner = cmd.corner ?? live.timerCorner
+        break
+      case 'questionOverlay': {
+        // Mesma regra da cena de perguntas: só aprovada ou respondida vai para a tela.
+        const q = cmd.questionId === null ? null : await question(ev.id, cmd.questionId)
+        if (cmd.questionId !== null && !q) error = 'Pergunta não encontrada.'
+        else if (q?.status === 'pending') [error, status] = ['A pergunta ainda não foi aprovada. Aprove antes de mostrar sobre o conteúdo.', 400]
+        else if (q?.status === 'rejected') [error, status] = ['A pergunta foi rejeitada. Aprove antes de mostrar sobre o conteúdo.', 400]
+        else live.questionOverlay = cmd.questionId
+        break
+      }
     }
   })
   if (error) return c.json({ error }, status)
+  // No Postgres, rejeitar a pergunta enquanto esta transação a lia não conflita (o lote roda fora dela): confere de
+  // novo depois de gravar, para um id rejeitado não ficar guardado e voltar à tela se ela for aprovada outra vez.
+  if (cmd.op === 'questionOverlay' && cmd.questionId !== null) {
+    const q = await question(ev.id, cmd.questionId)
+    if (q?.status !== 'approved' && q?.status !== 'answered') await dropOverlay(ev.id, [cmd.questionId])
+  }
   await publish(ev.id, ...(programChanged ? [] : (['moderator', 'screen'] as const)))
   return c.json({ ok: true })
 })
@@ -594,7 +624,8 @@ moderator.patch('/events/:id/questions/:qid', async (c) => {
   const status = input.status ?? q.status
   const text = input.text?.replace(/\s+/g, ' ') ?? q.text
   // Pergunta que deixa de estar aprovada sai da tela.
-  const screen = status === 'approved' || status === 'answered' ? q.screen : null
+  const showable = status === 'approved' || status === 'answered'
+  const screen = showable ? q.screen : null
   await run(
     'UPDATE questions SET text = ?, status = ?, anonymous = ?, screen = ?, flagged = ? WHERE id = ?',
     text,
@@ -604,9 +635,27 @@ moderator.patch('/events/:id/questions/:qid', async (c) => {
     hasFlagWord(text, toEventInfo(ev).settings.flagWords) ? 1 : 0,
     q.id,
   )
-  await publish(ev.id, 'moderator', ...(q.participantId ? ([`p:${q.participantId}`] as const) : []), ...(q.screen !== null ? (['screen', 'participants'] as const) : []))
+  // Sobre o conteúdo (lido depois da gravação): sai se deixou de estar aprovada; editada, a tela recebe o texto novo.
+  const overlay = showable ? toEventInfo((await eventRow(ev.id)) ?? ev).live.questionOverlay === q.id : await dropOverlay(ev.id, [q.id])
+  await publish(
+    ev.id,
+    'moderator',
+    ...(q.participantId ? ([`p:${q.participantId}`] as const) : []),
+    ...(q.screen !== null ? (['screen', 'participants'] as const) : overlay ? (['screen'] as const) : []),
+  )
   return c.json({ ok: true })
 })
+
+/** Tira de cima do conteúdo a pergunta que não pode mais aparecer (pendente, rejeitada ou excluída). Diz se ela estava lá. */
+async function dropOverlay(eventId: string, ids: string[]): Promise<boolean> {
+  const r = await eventRow(eventId)
+  const id = r && toEventInfo(r).live.questionOverlay
+  if (!id || !ids.includes(id)) return false // caso comum: nada a gravar
+  await updateLive(eventId, (live) => {
+    if (live.questionOverlay === id) live.questionOverlay = null
+  })
+  return true
+}
 
 /** Coloca ou tira uma pergunta da tela. `solo` limpa as demais antes. */
 moderator.post('/events/:id/questions/:qid/screen', async (c) => {
@@ -653,6 +702,7 @@ moderator.post('/events/:id/questions/bulk', async (c) => {
       args: [status, keepScreen ? 1 : 0, ev.id, id],
     })),
   )
+  if (!keepScreen) await dropOverlay(ev.id, ids)
   await publish(ev.id)
   return c.json({ ok: true })
 })
@@ -671,6 +721,7 @@ moderator.delete('/events/:id/questions/:qid', async (c) => {
     { sql: 'DELETE FROM likes WHERE question_id IN (SELECT id FROM questions WHERE event_id = ? AND id = ?)', args: [ev.id, qid] },
     { sql: 'DELETE FROM questions WHERE event_id = ? AND id = ?', args: [ev.id, qid] },
   ])
+  await dropOverlay(ev.id, [qid])
   await publish(ev.id)
   return c.json({ ok: true })
 })

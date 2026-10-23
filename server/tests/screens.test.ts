@@ -99,7 +99,7 @@ test('moderador conecta a tela pelo código (minúsculas, espaços e hífens); a
   }
   const screen = await tv.snapshot<ScreenSnapshot>('/api/screen/stream')
   assert.equal(screen.event.id, event.id)
-  assert.deepEqual(Object.keys(screen).sort(), ['event', 'program', 'publicUrl', 'questions', 'serverNow'])
+  assert.deepEqual(Object.keys(screen).sort(), ['event', 'program', 'publicUrl', 'questionOverlay', 'questions', 'serverNow'])
   assert.deepEqual((await tv.req('POST', '/api/screen/pair')).data, { paired: true, eventId: event.id })
   // Nome padrão numerado; nome informado é usado como veio (sem espaços nas pontas).
   const named = await pairedScreen(mod, event.id, '  Palco  ')
@@ -297,7 +297,7 @@ test('tela aberta pelo console (?event=) exige sessão de moderador e não entra
     try {
       const screen = await sse.next<ScreenSnapshot>('state')
       assert.equal(screen.event.id, event.id)
-      assert.deepEqual(Object.keys(screen).sort(), ['event', 'program', 'publicUrl', 'questions', 'serverNow'])
+      assert.deepEqual(Object.keys(screen).sort(), ['event', 'program', 'publicUrl', 'questionOverlay', 'questions', 'serverNow'])
       const s = await panel.next<ModeratorSnapshot>('state', { where: (x) => x.presence.screens === 1 })
       assert.deepEqual(s.screens, [])
     } finally {

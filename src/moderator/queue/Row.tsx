@@ -14,7 +14,7 @@ import { run } from '../context.ts'
 import type { Question } from '../../../shared/types.ts'
 import type { Air, Tab } from './logic.ts'
 
-export type Action = 'approve' | 'reject' | 'answer' | 'restore' | 'spotlight' | 'show' | 'hide' | 'edit'
+export type Action = 'approve' | 'reject' | 'answer' | 'restore' | 'spotlight' | 'overlay' | 'show' | 'hide' | 'edit'
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
 
@@ -29,6 +29,8 @@ export interface RowProps {
   air: Air
   /** Única pergunta na tela: "Destacar" não mudaria nada. */
   solo: boolean
+  /** Esta é a pergunta sobre o conteúdo (`live.questionOverlay`). */
+  overlay: boolean
   /** Relógio do servidor, para "há 3 min". */
   now: number
   current: boolean
@@ -44,7 +46,7 @@ export interface RowProps {
 }
 
 export function Row(p: RowProps) {
-  const { q, tab, air, current, editing } = p
+  const { q, tab, air, overlay, current, editing } = p
   const act = (a: Action) => () => p.onAct(a, q)
   const chips = [
     air === 'program' && (
@@ -58,6 +60,11 @@ export function Row(p: RowProps) {
       </Chip>
     ),
     air === 'screen' && <Chip key="air">Na tela</Chip>,
+    overlay && (
+      <Chip key="over" tone="program">
+        Sobre o conteúdo
+      </Chip>
+    ),
     q.status === 'answered' && <Chip key="st">Respondida</Chip>,
     q.status === 'rejected' && (
       <Chip key="st" tone="outline">
@@ -88,8 +95,7 @@ export function Row(p: RowProps) {
       className={cx(
         'group relative grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 px-3 pt-1 pb-2.5 focus-visible:-outline-offset-2 focus-visible:outline-(--focus)',
         current ? 'bg-raised' : p.picked ? 'bg-[color-mix(in_oklab,var(--fg)_5%,transparent)]' : 'hover:bg-[color-mix(in_oklab,var(--fg)_4%,transparent)]',
-        air === 'program' && 'tally-program',
-        air === 'preview' && 'tally-preview',
+        air === 'program' || overlay ? 'tally-program' : air === 'preview' && 'tally-preview',
       )}
     >
       <button
@@ -147,9 +153,12 @@ export function Row(p: RowProps) {
                     Remover da tela
                   </Button>
                 )}
+                {/* Sobrepor fica no menu: um quarto botão não cabe na linha da coluna de 440 px. */}
                 <Menu
                   trigger={<IconButton size="sm" label="Mais ações" icon={<DotsThreeIcon size={16} weight="bold" />} />}
                   items={[
+                    { label: overlay ? 'Remover de cima do conteúdo' : 'Sobrepor ao conteúdo', kbd: 'S', onSelect: act('overlay') },
+                    'separator',
                     {
                       label: q.status === 'answered' ? 'Desmarcar respondida' : 'Marcar como respondida',
                       kbd: 'M',
@@ -172,7 +181,7 @@ export function Row(p: RowProps) {
       </div>
 
       {editing ? (
-        <Editor q={q} eventId={p.eventId} onAir={air === 'program'} onDone={() => p.onEditEnd(q)} />
+        <Editor q={q} eventId={p.eventId} onAir={air === 'program' || overlay} onDone={() => p.onEditEnd(q)} />
       ) : (
         <p className="col-start-2 text-read break-words text-fg">{q.text}</p>
       )}

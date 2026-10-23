@@ -114,6 +114,8 @@ function useReloadOnDeploy(started: boolean) {
         const html = await r.text()
         // Só um index.html de verdade com outro script: página de erro da rede ou da CDN não recarrega.
         if (!r.ok || !html.includes('<script type="module"') || html.includes(`src="${mine}"`)) return
+        // Em tela cheia, espera: a página recarregada voltaria fora dela (o navegador exige um gesto para entrar de novo).
+        if (document.fullscreenElement) return
         try {
           if (started) sessionStorage.setItem(RESUME, '1')
         } catch {

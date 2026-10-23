@@ -146,7 +146,7 @@ Emojis das reações: [Twemoji](https://github.com/jdecked/twemoji), de Twitter,
 
 **A tela mostra "Iniciar exibição".** É de propósito: o navegador só libera tela cheia, som e tela sempre ligada depois de um clique. Clique uma vez no computador da projeção; ao recarregar a página, o portão volta.
 
-**Versão nova publicada com o telão aberto.** A tela confere a versão a cada minuto e, quando muda, se recarrega sozinha e volta direto à exibição, sem o portão. A tela cheia precisa de um gesto: clique uma vez no telão ou aperte <kbd>F</kbd>. Uma aba aberta antes desta função existir precisa ser recarregada à mão uma vez.
+**Versão nova publicada com o telão aberto.** A tela confere a versão a cada minuto. Fora da tela cheia, se recarrega sozinha e volta direto à exibição, sem o portão. Em tela cheia, espera: a página recarregada voltaria fora dela, porque o navegador só entra em tela cheia com um gesto. Para atualizar, recarregue num intervalo (<kbd>F5</kbd> e "Iniciar exibição").
 
 **Vídeo do YouTube.** Na cena Vídeo, use "Usar URL" e cole o link (watch, youtu.be, shorts ou live): o telão toca no player do YouTube e os botões Tocar, Pausar e Voltar ao início do console comandam o player. No console aparece só um aviso, como na página web. Para mostrar o YouTube sem os controles do console, use a cena Página web.
 

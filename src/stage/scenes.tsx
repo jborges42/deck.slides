@@ -113,11 +113,16 @@ function contentKey(p: SceneProps): string {
   }
 }
 
-/** Uma cena. No telão, mudanças de conteúdo (outra pergunta, texto atualizado) entram em fusão de 300 ms. */
+/**
+ * Uma cena. No telão, mudanças de conteúdo (outra pergunta, texto atualizado) entram em fusão de 300 ms, e a área do
+ * texto também (faixa de entrada ligada, desligada ou trocando de borda): o texto não salta. Vídeo, página web e
+ * imagem sangram até a borda e ficam fora: remontar recarregaria a mídia.
+ */
 export function SceneView(p: SceneProps) {
   const { scene } = p
+  const place = scene.type === 'video' || scene.type === 'embed' || scene.type === 'image' ? '' : JSON.stringify(p.box)
   return (
-    <Crossfade id={contentKey(p)} ms={p.mode === 'screen' ? 300 : 0}>
+    <Crossfade id={contentKey(p) + place} ms={p.mode === 'screen' ? 300 : 0}>
       {scene.type === 'title' ? (
         <TitleScene {...p} content={scene.content} />
       ) : scene.type === 'image' ? (

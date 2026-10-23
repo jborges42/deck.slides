@@ -159,6 +159,10 @@ export function Stage(props: StageProps) {
     : joinTop
       ? { ...box, top: Math.max(box.top, band + GAP), slidesTop: band + 24 }
       : box
+  const timerTop = joinTop ? band + 24 : timerOverlayTop(theme, live.timerCorner)
+  // Sobreposições aparecem, somem e mudam de lugar em fusão: trocar conteúdo dentro da cena é 300 ms no telão (corte no
+  // console). Indo para a tela de espera, saem junto com a cena.
+  const overlayMs = !shown ? fadeMs : mode === 'screen' ? 300 : 0
   useEffect(() => {
     if (!question) reportQuestion(false)
   }, [question, reportQuestion])
@@ -226,12 +230,18 @@ export function Stage(props: StageProps) {
             q={question}
             theme={theme}
             box={{ ...sceneBox, top: questionOverlayTop(theme, sceneBox.top, timerOn ? { corner: live.timerCorner, label: live.timer.label } : null) }}
-            // Indo para a tela de espera, sai junto com a cena; trocar a pergunta é conteúdo (300 ms no telão, corte no console).
-            ms={!shown ? fadeMs : mode === 'screen' ? 300 : 0}
+            ms={overlayMs}
             report={reportQuestion}
           />
         )}
-        {!thumb && <JoinBand theme={theme} joinUrl={props.joinUrl} pin={props.pin} show={join} at={live.joinPosition} />}
+        {/* Ligar e desligar a faixa é a transição de opacidade dela; trocar de posição é fusão entre as duas bordas. */}
+        {!thumb && (
+          <div className="pointer-events-none absolute inset-0">
+            <Crossfade id={live.joinPosition} ms={mode === 'screen' ? 300 : 0}>
+              <JoinBand theme={theme} joinUrl={props.joinUrl} pin={props.pin} show={join} at={live.joinPosition} />
+            </Crossfade>
+          </div>
+        )}
         {/* A pergunta sobre o conteúdo ocupa a base da tela: as reações esperam ela sair. */}
         {!thumb && live.overlays.reactions && shown && shown.type !== 'video' && !question && (
           <Reactions
@@ -242,15 +252,14 @@ export function Stage(props: StageProps) {
             bottom={joinBottom ? brand + BRAND + 24 : box.bottom}
           />
         )}
-        {timerOn && (
-          <TimerOverlay
-            timer={live.timer}
-            offset={props.offset}
-            theme={theme}
-            corner={live.timerCorner}
-            top={joinTop ? band + 24 : timerOverlayTop(theme, live.timerCorner)}
-            amber={cardAmber}
-          />
+        {!thumb && (
+          <div className="pointer-events-none absolute inset-0">
+            <Crossfade id={timerOn ? `${live.timerCorner}:${timerTop}` : 'none'} ms={overlayMs}>
+              {timerOn && (
+                <TimerOverlay timer={live.timer} offset={props.offset} theme={theme} corner={live.timerCorner} top={timerTop} amber={cardAmber} />
+              )}
+            </Crossfade>
+          </div>
         )}
         {/* Marca fixa em toda cena e na tela de espera; a tela de espera preta cobre. */}
         <BrandStrip
@@ -323,7 +332,8 @@ function BrandStandby({ theme, name, top, bottom }: { theme: Theme; name: string
   return (
     <div
       className="absolute flex flex-col items-center justify-center text-center"
-      style={{ top: u(top), left: u(safe), right: u(safe), bottom: u(bottom), gap: u(48 * s) }}
+      // A faixa de entrada liga, desliga ou troca de borda: o nome desliza para o centro novo junto com a marca.
+      style={{ top: u(top), left: u(safe), right: u(safe), bottom: u(bottom), gap: u(48 * s), transition: 'top 300ms linear, bottom 300ms linear' }}
     >
       {theme.logo && (
         <img

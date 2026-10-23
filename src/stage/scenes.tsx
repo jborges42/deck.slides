@@ -664,7 +664,8 @@ function TimerScene({ scene, content, live, offset, mode, theme, box, amber }: W
 
 /** Re-renderiza só enquanto o cronômetro corre: parado ou em miniatura, nada fica acordando a página. */
 export function Ticking({ children }: { children: (now: number) => ReactNode }) {
-  return children(useNow(200))
+  // 50 ms: cada tela vira o segundo no máximo 50 ms depois da hora certa (com 200, telas lado a lado discordavam).
+  return children(useNow(50))
 }
 
 function TimerView({ face, label, theme, box, amber }: { face: TimerFace; label: string; theme: Theme; box: Box; amber: string }) {

@@ -63,7 +63,8 @@ interface Frame {
 
 let frames = 0
 const FADE = 500 // fusão padrão entre cenas
-const frameSrc = (mode: '' | 'retomar' | 'troca') => `${location.pathname}?quadro${mode && `=${mode}`}`
+// /tela em minúsculas: o roteador aceita /TELA, mas a CSP só deixa /tela entrar num iframe.
+const frameSrc = (mode: '' | 'retomar' | 'troca') => `${location.pathname.replace(/^\/tela/i, '/tela')}?quadro${mode && `=${mode}`}`
 
 /**
  * Moldura do telão: tela cheia, tela ligada e a versão publicada conferida a cada minuto. A versão nova carrega num
@@ -176,7 +177,7 @@ type Show = ReturnType<typeof useShow>
  * recarga, a tela cheia pede um gesto e volta no primeiro clique (ou F).
  */
 function useShow() {
-  const [started, setStarted] = useState(QUADRO === 'retomar' || QUADRO === 'troca')
+  const [started, setStarted] = useState(QUADRO === 'retomar' || (QUADRO === 'troca' && activeStarted()))
   // Na troca de versão, o cursor continua oculto: a plateia não pode ver nada mudar.
   const [idle, setIdle] = useState(QUADRO === 'troca')
   const lock = useRef<WakeLockSentinel | null>(null)
@@ -191,6 +192,11 @@ function useShow() {
     fullscreen(true)
     setStarted(true)
   }, [])
+
+  // A versão nova que carregar por trás lê isto para seguir igual (activeStarted).
+  useEffect(() => {
+    ;(window as Started).deckStarted = started
+  }, [started])
 
   useEffect(() => {
     if (!started) return
@@ -221,14 +227,37 @@ function useShow() {
   return { started, start, idle }
 }
 
+type Started = Window & { deckStarted?: boolean }
+
+/**
+ * O quadro no ar já passou do portão? A versão nova segue igual: com o portão ainda na tela, ela também mostra o portão
+ * (pular deixaria o telão sem tela cheia, sem som liberado e sem botão). Quadro de versão sem a marca estava exibindo.
+ */
+function activeStarted(): boolean {
+  try {
+    return (page.querySelector<HTMLIFrameElement>('iframe[data-quadro="ativo"]')?.contentWindow as Started | null)?.deckStarted ?? true
+  } catch {
+    return true
+  }
+}
+
+// Versão nova carregando por trás: avisa a moldura uma vez só (Live remontado depois de assumir não arma de novo).
+let handedOver = QUADRO !== 'troca'
+function handOver() {
+  if (handedOver) return
+  handedOver = true
+  window.parent.postMessage({ deck: 'ready', entry: entryOf(document) }, location.origin)
+}
+
 /**
  * Versão nova carregando por trás da moldura (?quadro=troca): espera uma cena sem som nem página externa (vídeo e
  * página web tocariam em dobro com a versão que está no ar), desenha, espera fontes e imagens e avisa a moldura, que
  * troca os iframes numa fusão. Devolve true enquanto a cena no ar não deixa desenhar.
  */
 function useHandover(snap: ScreenSnapshot | null): boolean {
-  const [waiting, setWaiting] = useState(QUADRO === 'troca')
-  const program = snap && !snap.event.live.standby ? snap.program : null
+  const [waiting, setWaiting] = useState(!handedOver)
+  // Sob a tela de espera preta a cena continua montada (volta na mesma fusão): conta a cena mesmo com a espera.
+  const program = snap?.program
   const loud = program?.type === 'video' || program?.type === 'embed'
   const has = !!snap
   useEffect(() => {
@@ -238,7 +267,7 @@ function useHandover(snap: ScreenSnapshot | null): boolean {
     void Promise.race([settled, new Promise((r) => setTimeout(r, 3000))]).then(() => {
       if (off) return
       setWaiting(false)
-      window.parent.postMessage({ deck: 'ready', entry: entryOf(document) }, location.origin)
+      handOver()
     })
     return () => {
       off = true
@@ -397,6 +426,11 @@ function Pairing({ show, onPaired }: { show: Show; onPaired: () => void }) {
       es?.close()
     }
   }, [onPaired])
+
+  // Versão nova carregando por trás com a tela ainda sem par: o código é o mesmo, então já pode assumir.
+  useEffect(() => {
+    if (code) handOver()
+  }, [code])
 
   if (!code && !failed) return <main className="on-brand fixed inset-0" />
   return (

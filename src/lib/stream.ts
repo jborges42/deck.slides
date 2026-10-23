@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Counts } from '../../shared/types.ts'
+import { bestOffset } from './clock.ts'
 
 /** busy = o servidor recusou por excesso de abas/conexões (429); tenta de novo devagar. */
 export type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'busy' | 'denied' | 'gone'
@@ -34,6 +35,7 @@ export function useStream<S extends { serverNow: number }>(url: string | null): 
     let stopped = false
     let attempt = 0
     let last = Date.now()
+    let best: number | null = null // melhor amostra do relógio nesta conexão
     let status: StreamStatus = 'connecting'
     const set = (patch: Partial<Stream<S>>) => {
       if (patch.status) status = patch.status
@@ -54,14 +56,18 @@ export function useStream<S extends { serverNow: number }>(url: string | null): 
       close()
       last = Date.now()
       es = new EventSource(url)
+      // Também a cada reconexão automática do EventSource. Recomeça o offset: o relógio daqui pode ter sido
+      // corrigido e a instância do servidor pode ser outra (o offset anterior vale até a primeira amostra).
       es.addEventListener('open', () => {
         heard()
+        best = null
         set({ status: 'live' })
       })
       es.addEventListener('state', (e) => {
         heard()
         const state = JSON.parse(e.data) as S
-        set({ state, status: 'live', offset: state.serverNow - Date.now() })
+        best = bestOffset(best, state.serverNow - Date.now())
+        set({ state, status: 'live', offset: best })
       })
       es.addEventListener('counts', (e) => {
         heard()
@@ -69,7 +75,9 @@ export function useStream<S extends { serverNow: number }>(url: string | null): 
       })
       es.addEventListener('ping', (e) => {
         heard()
-        set({ offset: Number(e.data) - Date.now() })
+        const prev = best
+        best = bestOffset(best, Number(e.data) - Date.now())
+        if (best !== prev) set({ offset: best }) // ping que não melhora o offset não re-renderiza
       })
       // O servidor renova a conexão antes do tempo máximo da função (Vercel): reabre na hora, sem mostrar queda.
       es.addEventListener('reconnect', () => {

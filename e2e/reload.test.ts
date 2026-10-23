@@ -97,12 +97,45 @@ test('versão nova troca só o conteúdo: a página e a tela cheia continuam; p�
   await tela.clock.runFor(5000)
   await tela.waitForTimeout(500)
   assert.equal(await frames(), 2, 'trocou com a página web no ar')
+  // A tela de espera preta mantém a página montada por baixo: ainda não é a vez.
   await api('POST', `/events/${id}/live`, { op: 'standby', on: true })
+  await tela.clock.runFor(5000)
+  await tela.waitForTimeout(500)
+  assert.equal(await frames(), 2, 'trocou com a página web sob a tela de espera')
+  const calm = (await api('POST', `/events/${id}/scenes`, { type: 'title', name: 'Calma', content: { kicker: '', title: 'Intervalo', body: '' } })) as { id: string }
+  await api('POST', `/events/${id}/live`, { op: 'preview', sceneId: calm.id })
+  await api('POST', `/events/${id}/live`, { op: 'take' })
   await pump(tela, 'a versão nova não assumiu depois da cena calma', swapped)
+  await view.getByText('Intervalo').first().waitFor()
   assert.equal(await sameShell(), true, 'a página recarregou')
   assert.equal(await fullscreen(), true, 'a troca saiu da tela cheia')
 
   await tela.unrouteAll()
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+test('versão nova com o telão ainda no portão: a troca mantém o portão (sem pular a tela cheia e o som)', async () => {
+  const { id } = (await api('POST', '/events', { name: 'Conexão Profissional' })) as { id: string }
+  const { context, tela, view, url } = await projector(id)
+  const errors = watchErrors(tela)
+  await tela.clock.install()
+  await tela.goto(url)
+  await view.getByRole('button', { name: 'Iniciar exibição' }).waitFor()
+  await view.locator('body').evaluate(() => Object.assign(globalThis, { antigo: true }))
+  await tela.route(`**${url}`, async (route) => {
+    if (route.request().resourceType() !== 'fetch') return route.fallback()
+    const res = await route.fetch()
+    await route.fulfill({ response: res, body: (await res.text()).replace(/\/assets\/index-[\w-]+\.js/, '/assets/index-nova.js') })
+  })
+  await tela.clock.runFor(61_000)
+  await pump(tela, 'a versão nova não assumiu', async () => (await tela.locator('iframe').count()) === 1 && (await view.locator('body').evaluate(() => !('antigo' in globalThis))))
+  await view.getByRole('button', { name: 'Iniciar exibição' }).waitFor()
+  await tela.unrouteAll()
+  // O portão da versão nova funciona: tela cheia na moldura e a exibição começa.
+  await view.getByRole('button', { name: 'Iniciar exibição' }).click()
+  await view.getByText('Conexão Profissional').first().waitFor()
+  assert.equal(await tela.evaluate<boolean>('!!document.fullscreenElement'), true)
   assert.deepEqual(errors, [])
   await context.close()
 })

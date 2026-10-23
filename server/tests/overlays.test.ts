@@ -83,7 +83,9 @@ describe('cronômetro sobre o conteúdo', () => {
         [{ op: 'timerOverlay', on: true }, { timerOverlay: true, timerCorner: 'top-left' }],
         [{ op: 'timerOverlay', corner: 'top-right' }, { timerOverlay: true, timerCorner: 'top-right' }],
         [{ op: 'timerOverlay' }, { timerOverlay: true, timerCorner: 'top-right' }],
-        [{ op: 'timerOverlay', on: false }, { timerOverlay: false, timerCorner: 'top-right' }],
+        [{ op: 'timerOverlay', corner: 'bottom-left' }, { timerOverlay: true, timerCorner: 'bottom-left' }],
+        [{ op: 'timerOverlay', corner: 'bottom-right' }, { timerOverlay: true, timerCorner: 'bottom-right' }],
+        [{ op: 'timerOverlay', on: false }, { timerOverlay: false, timerCorner: 'bottom-right' }],
         [{ op: 'timerOverlay', on: true, corner: 'top-left' }, { timerOverlay: true, timerCorner: 'top-left' }],
       ]
       for (const [cmd, want] of steps) {
@@ -104,7 +106,7 @@ describe('cronômetro sobre o conteúdo', () => {
     const { id } = await setup()
     await ok(id, { op: 'timerOverlay', on: true, corner: 'top-right' })
     const before = await liveOf(id)
-    assert.match(await refused(mod, id, { op: 'timerOverlay', corner: 'bottom-left' }, 400), /^Opção inválida/)
+    assert.match(await refused(mod, id, { op: 'timerOverlay', corner: 'bottom' }, 400), /^Opção inválida/)
     for (const cmd of [{ op: 'timerOverlay', on: 'sim' }, { op: 'timerOverlay', on: 1 }, { op: 'timerOverlay', corner: null }])
       await refused(mod, id, cmd, 400)
     assert.deepEqual(await liveOf(id), before)

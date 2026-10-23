@@ -252,14 +252,14 @@ interface TimerOverlayProps {
   offset: number
   theme: Theme
   corner: LiveState['timerCorner']
-  /** Distância do topo do canvas: `timerOverlayTop` ou, com a faixa de entrada em cima, logo abaixo dela. */
-  top: number
+  /** Distância da borda de cima ou de baixo do canvas, conforme o canto (calculada no Stage). */
+  at: number
   /** Âmbar do aviso com contraste garantido sobre o cartão (`surface`), não sobre o fundo. */
   amber: string
 }
 
 /**
- * Cronômetro ao vivo num canto de cima, sobre qualquer cena. Cartão sempre sólido: fica sobre slide, imagem e vídeo
+ * Cronômetro ao vivo num canto, sobre qualquer cena. Cartão sempre sólido: fica sobre slide, imagem e vídeo
  * e precisa de contraste garantido. Só ele re-renderiza enquanto corre; parado, nada acorda a página.
  */
 export function TimerOverlay({ timer, offset, ...rest }: TimerOverlayProps) {
@@ -268,15 +268,15 @@ export function TimerOverlay({ timer, offset, ...rest }: TimerOverlayProps) {
   return view(timerElapsed(timer, Date.now() + offset))
 }
 
-function TimerCard({ face, label, theme, corner, top, amber }: Omit<TimerOverlayProps, 'timer' | 'offset'> & { face: TimerFace; label: string }) {
+function TimerCard({ face, label, theme, corner, at, amber }: Omit<TimerOverlayProps, 'timer' | 'offset'> & { face: TimerFace; label: string }) {
   const s = theme.scale
   const t = TIMER_CARD
-  const right = corner === 'top-right'
+  const right = corner.endsWith('right')
   return (
     <div
       className={cx('pointer-events-none absolute flex flex-col bg-surface', right && 'items-end text-right')}
       style={{
-        top: u(top),
+        [corner.startsWith('bottom') ? 'bottom' : 'top']: u(at),
         [right ? 'right' : 'left']: u(safeOf(theme)),
         borderRadius: u(theme.radius),
         padding: `${u(t.pad[0])} ${u(t.pad[1])}`,

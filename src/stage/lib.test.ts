@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { contrast, deriveTheme } from '../../shared/screen-theme.ts'
-import { addressParts, amberOn, group, questionOverlayTop, safeOf, timerFace, timerOverlayTop, youtubeId, type TimerSpec } from './lib.ts'
+import { addressParts, amberOn, group, safeOf, timerFace, timerOverlayEnd, timerOverlayTop, youtubeId, type TimerSpec } from './lib.ts'
 
 const countdown: TimerSpec = { mode: 'countdown', durationMs: 600_000, warnMs: 120_000, criticalMs: 30_000, onEnd: 'overtime', endText: '' }
 
@@ -76,20 +76,15 @@ test('cronômetro sobre o conteúdo: na margem de segurança ou logo abaixo do l
   assert.equal(timerOverlayTop({ ...look, logoPosition: 'top-right' }, 'top-right'), safe)
 })
 
-test('pergunta sobre o conteúdo: não invade a altura reservada ao cronômetro', () => {
-  // Sem cronômetro: o topo da área da cena.
-  assert.equal(questionOverlayTop(look, safe, null), safe)
+test('cronômetro sobre o conteúdo: altura reservada a partir da borda dele', () => {
   // Cartão: respiro 20 + 20, algarismos 120 × 1,1; rótulo 32 × 1,25 + 8; e o GAP de 40.
-  const plain = questionOverlayTop(look, safe, { corner: 'top-left', label: '' })
+  const plain = timerOverlayEnd(look, safe, '')
   assert.equal(plain, safe + 40 + 132 + 40)
-  assert.equal(questionOverlayTop(look, safe, { corner: 'top-right', label: 'Ana Souza' }), plain + 48)
-  assert.equal(questionOverlayTop(look, safe, { corner: 'top-left', label: '   ' }), plain) // rótulo em branco não aparece
-  assert.ok(questionOverlayTop({ ...look, scale: 1.5 }, safe, { corner: 'top-left', label: '' }) > plain)
-  // Cronômetro abaixo do logo do mesmo canto: a reserva desce junto.
-  const logo = { ...look, logo: '/logo.png' }
-  assert.equal(questionOverlayTop(logo, safe + 96 + 40, { corner: 'top-left', label: '' }), plain + 96 + 24)
-  // Área da cena já mais baixa que o cronômetro: vale a da cena.
-  assert.equal(questionOverlayTop(look, 500, { corner: 'top-left', label: 'Ana' }), 500)
+  assert.equal(timerOverlayEnd(look, safe, 'Ana Souza'), plain + 48)
+  assert.equal(timerOverlayEnd(look, safe, '   '), plain) // rótulo em branco não aparece
+  assert.ok(timerOverlayEnd({ ...look, scale: 1.5 }, safe, '') > plain)
+  // Cronômetro mais longe da borda (abaixo do logo, acima da marca): a reserva vai junto.
+  assert.equal(timerOverlayEnd(look, safe + 120, ''), plain + 120)
 })
 
 test('vídeo do YouTube: id de qualquer formato de link; outros endereços e ids estranhos não passam', () => {

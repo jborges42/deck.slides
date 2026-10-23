@@ -85,8 +85,8 @@ export interface LiveState {
   playback: PlaybackState
   slides: Record<string, number> // slide atual de cada apresentação (id da cena -> índice); ausente = primeiro
   // Sobre o conteúdo: valem sobre qualquer cena no ar, sem trocar a cena (somem na tela de espera).
-  timerOverlay: boolean // cronômetro (`timer`) num canto de cima
-  timerCorner: 'top-left' | 'top-right'
+  timerOverlay: boolean // cronômetro (`timer`) num canto
+  timerCorner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
   questionOverlay: string | null // id da pergunta sobre o conteúdo; null = nenhuma
 }
 

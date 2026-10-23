@@ -30,21 +30,20 @@ export const TIMER_CARD = { pad: [20, 32], label: 32, gap: 8, digits: 120, messa
 
 type OverlayTheme = Pick<Theme, 'safe' | 'logo' | 'logoPosition' | 'logoSize' | 'scale'>
 
-/** Topo do cronômetro sobre o conteúdo: na margem de segurança ou, com o logo do tema no mesmo canto, logo abaixo dele. */
+/** Topo do cronômetro num canto de cima: na margem de segurança ou, com o logo do tema no mesmo canto, logo abaixo dele. */
 export function timerOverlayTop(theme: OverlayTheme, corner: LiveState['timerCorner']): number {
   const safe = safeOf(theme)
   return theme.logo && theme.logoPosition === corner ? safe + theme.logoSize + 24 : safe
 }
 
 /**
- * Topo da área da pergunta sobre o conteúdo: o da cena ou, com o cronômetro visível, abaixo da altura reservada a
- * ele. A reserva estima o rótulo numa linha; uma segunda linha (ou a mensagem final em duas) cabe no GAP.
+ * Até onde vai o cronômetro sobre o conteúdo, medido da borda dele (em cima ou embaixo) a partir de `at`, com o GAP:
+ * a pergunta e as reações ficam além. A reserva estima o rótulo numa linha; uma segunda linha (ou a mensagem final
+ * em duas) cabe no GAP.
  */
-export function questionOverlayTop(theme: OverlayTheme, sceneTop: number, timer: { corner: LiveState['timerCorner']; label: string } | null): number {
-  if (!timer) return sceneTop
+export function timerOverlayEnd(theme: Pick<Theme, 'scale'>, at: number, label: string): number {
   const t = TIMER_CARD
-  const height = 2 * t.pad[0] + ((timer.label.trim() ? t.label * 1.25 + t.gap : 0) + t.digits * 1.1) * theme.scale
-  return Math.max(sceneTop, timerOverlayTop(theme, timer.corner) + height + GAP)
+  return at + 2 * t.pad[0] + ((label.trim() ? t.label * 1.25 + t.gap : 0) + t.digits * 1.1) * theme.scale + GAP
 }
 
 /**

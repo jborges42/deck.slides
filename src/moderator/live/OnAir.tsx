@@ -185,6 +185,8 @@ const EDGES: Option<LiveState['joinPosition']>[] = [
 const CORNERS: Option<LiveState['timerCorner']>[] = [
   { value: 'top-left', label: 'Em cima à esquerda' },
   { value: 'top-right', label: 'Em cima à direita' },
+  { value: 'bottom-left', label: 'Embaixo à esquerda' },
+  { value: 'bottom-right', label: 'Embaixo à direita' },
 ]
 
 /** Duração da fala sem cena de cronômetro, com a mesma leitura do inspetor ("5" = 5 min, "1:30"). */

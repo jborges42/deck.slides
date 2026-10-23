@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import { CANVAS, eventPalette, fontVars, loadThemeFonts, tokenVars } from '../lib/theme.ts'
 import { BrandStrip, cx } from '../ui'
-import { BRAND, BRAND_FONT, BRAND_W, GAP, amberOn, questionOverlayTop, safeOf, timerOverlayTop, u } from './lib.ts'
+import { BRAND, BRAND_FONT, BRAND_W, GAP, amberOn, safeOf, timerOverlayEnd, timerOverlayTop, u } from './lib.ts'
 import { JoinBand, QuestionOverlay, Reactions, TimerOverlay, bandHeight } from './overlays.tsx'
 import { Crossfade, SceneView, type Box } from './scenes.tsx'
 import type { LiveState, PublicQuestion, ReactionKind, Scene, Theme } from '../../shared/types.ts'
@@ -159,7 +159,14 @@ export function Stage(props: StageProps) {
     : joinTop
       ? { ...box, top: Math.max(box.top, band + GAP), slidesTop: band + 24 }
       : box
-  const timerTop = joinTop ? band + 24 : timerOverlayTop(theme, live.timerCorner)
+  // Cronômetro: em cima, na margem ou logo abaixo do logo do mesmo canto (ou da faixa de entrada); embaixo, logo acima
+  // da linha de baixo da cena (logo, rodapé e marca, ou a marca sobre a faixa de entrada). `timerAt` é a distância da
+  // borda do canto; a pergunta e as reações no mesmo canto ficam além do cartão.
+  const timerLow = live.timerCorner.startsWith('bottom')
+  const timerAt = timerLow ? sceneBox.bottom - GAP + 24 : joinTop ? band + 24 : timerOverlayTop(theme, live.timerCorner)
+  const timerEnd = timerOn ? timerOverlayEnd(theme, timerAt, live.timer.label) : 0
+  const questionBox = timerLow ? { ...sceneBox, bottom: Math.max(sceneBox.bottom, timerEnd) } : { ...sceneBox, top: Math.max(sceneBox.top, timerEnd) }
+  const reactionsBottom = timerOn && live.timerCorner === 'bottom-right' ? timerEnd - GAP + 24 : joinBottom ? brand + BRAND + 24 : box.bottom
   // Sobreposições aparecem, somem e mudam de lugar em fusão: trocar conteúdo dentro da cena é 300 ms no telão (corte no
   // console). Indo para a tela de espera, saem junto com a cena.
   const overlayMs = !shown ? fadeMs : mode === 'screen' ? 300 : 0
@@ -229,7 +236,7 @@ export function Stage(props: StageProps) {
           <QuestionOverlay
             q={question}
             theme={theme}
-            box={{ ...sceneBox, top: questionOverlayTop(theme, sceneBox.top, timerOn ? { corner: live.timerCorner, label: live.timer.label } : null) }}
+            box={questionBox}
             ms={overlayMs}
             report={reportQuestion}
           />
@@ -249,14 +256,14 @@ export function Stage(props: StageProps) {
             totals={props.reactions}
             enabled={props.enabledReactions}
             sceneId={shown.id}
-            bottom={joinBottom ? brand + BRAND + 24 : box.bottom}
+            bottom={reactionsBottom}
           />
         )}
         {!thumb && (
           <div className="pointer-events-none absolute inset-0">
-            <Crossfade id={timerOn ? `${live.timerCorner}:${timerTop}` : 'none'} ms={overlayMs}>
+            <Crossfade id={timerOn ? `${live.timerCorner}:${timerAt}` : 'none'} ms={overlayMs}>
               {timerOn && (
-                <TimerOverlay timer={live.timer} offset={props.offset} theme={theme} corner={live.timerCorner} top={timerTop} amber={cardAmber} />
+                <TimerOverlay timer={live.timer} offset={props.offset} theme={theme} corner={live.timerCorner} at={timerAt} amber={cardAmber} />
               )}
             </Crossfade>
           </div>

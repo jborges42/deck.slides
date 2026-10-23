@@ -164,7 +164,7 @@ const liveCommand = z.discriminatedUnion('op', [
     .refine((t) => t.action !== 'set' || (t.mode !== undefined && t.durationMs !== undefined), 'Informe o modo e a duração do cronômetro.'),
   z.object({ op: z.literal('playback'), action: z.enum(['play', 'pause', 'restart']) }),
   z.object({ op: z.literal('slide'), sceneId: z.string().optional(), to: z.enum(['next', 'prev']).or(z.number().int().min(0).max(499)) }),
-  z.object({ op: z.literal('timerOverlay'), on: z.boolean().optional(), corner: z.enum(['top-left', 'top-right']).optional() }),
+  z.object({ op: z.literal('timerOverlay'), on: z.boolean().optional(), corner: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right']).optional() }),
   z.object({ op: z.literal('questionOverlay'), questionId: z.string().max(100).nullable() }),
 ])
 

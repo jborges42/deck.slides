@@ -141,7 +141,12 @@ const liveCommand = z.discriminatedUnion('op', [
   z.object({ op: z.literal('preview'), sceneId: z.string().nullable() }),
   z.object({ op: z.literal('take'), transition: z.enum(['cut', 'fade']).optional() }),
   z.object({ op: z.literal('standby'), on: z.boolean() }),
-  z.object({ op: z.literal('overlays'), reactions: z.boolean().optional(), join: z.boolean().optional() }),
+  z.object({
+    op: z.literal('overlays'),
+    reactions: z.boolean().optional(),
+    join: z.boolean().optional(),
+    joinPosition: z.enum(['top', 'bottom']).optional(),
+  }),
   z.object({
     op: z.literal('timer'),
     action: z.enum(['start', 'pause', 'reset', 'add', 'set']),
@@ -502,6 +507,7 @@ moderator.post('/events/:id/live', async (c) => {
         break
       case 'overlays':
         live.overlays = { reactions: cmd.reactions ?? live.overlays.reactions, join: cmd.join ?? live.overlays.join }
+        live.joinPosition = cmd.joinPosition ?? live.joinPosition
         break
       case 'timer': {
         const t = live.timer

@@ -1,6 +1,6 @@
 // Cenas do palco. Mídia (imagem, vídeo, página web) sangra até a borda do canvas; texto fica em `box`
 // (área segura menos logo e rodapé). Medidas em unidades do canvas de 1080 de altura, via u().
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { FilmStripIcon } from '@phosphor-icons/react/FilmStrip'
 import { GlobeIcon } from '@phosphor-icons/react/Globe'
 import { ImageIcon } from '@phosphor-icons/react/Image'
@@ -9,7 +9,7 @@ import { ThumbsUpIcon } from '@phosphor-icons/react/ThumbsUp'
 import { useNow } from '../lib/stream.ts'
 import { CANVAS } from '../lib/theme.ts'
 import { cx } from '../ui'
-import { card, group, timerFace, u, type TimerFace, type TimerSpec } from './lib.ts'
+import { card, group, timerFace, u, youtubeId, type TimerFace, type TimerSpec } from './lib.ts'
 import { Address, QrTile } from './overlays.tsx'
 import { playbackPosition, slideIndex, timerElapsed, type PublicQuestion, type Scene, type SceneContent, type Theme } from '../../shared/types.ts'
 import type { StageProps } from './Stage.tsx'
@@ -19,6 +19,8 @@ export interface Box {
   top: number
   bottom: number
   side: number
+  /** Topo da apresentação, que fica inteira: abaixo da faixa de entrada quando ela está em cima. */
+  slidesTop?: number
 }
 
 export interface SceneProps {
@@ -284,8 +286,8 @@ function ImageScene({ content, theme, box, mode }: With<'image'>) {
 // ---------- apresentação ----------
 
 /**
- * Slide atual inteiro, contido na área acima da linha de baixo (a marca fixa nunca cobre o slide; com a faixa
- * de entrada, fica acima dela também). No telão, os vizinhos ficam pré-carregados: passar o slide não pisca.
+ * Slide atual inteiro, contido na área acima da linha de baixo (a marca fixa nunca cobre o slide; a faixa de
+ * entrada também não, em cima ou embaixo). No telão, os vizinhos ficam pré-carregados: passar o slide não pisca.
  */
 function SlidesScene({ scene, content, live, box, mode }: With<'slides'>) {
   const i = slideIndex(live, { id: scene.id, content })
@@ -296,7 +298,7 @@ function SlidesScene({ scene, content, live, box, mode }: With<'slides'>) {
   }, [mode, i, content.slides])
   if (!src) return mode !== 'screen' && <Placeholder icon={<PresentationIcon size="1em" weight="bold" />} label="Sem slides" />
   return (
-    <div className="absolute inset-x-0 top-0" style={{ bottom: u(box.bottom - 24) }}>
+    <div className="absolute inset-x-0" style={{ top: u(box.slidesTop ?? 0), bottom: u(box.bottom - 24) }}>
       <img
         src={src}
         alt={`Slide ${i + 1} de ${content.slides.length}`}
@@ -311,7 +313,64 @@ function SlidesScene({ scene, content, live, box, mode }: With<'slides'>) {
 
 // ---------- vídeo ----------
 
-function VideoScene({ scene, content, live, offset, mode }: With<'video'>) {
+function VideoScene(props: With<'video'>) {
+  const yt = youtubeId(props.content.src)
+  return yt ? <YouTubeVideo id={yt} {...props} /> : <FileVideo {...props} />
+}
+
+/**
+ * Link do YouTube colado em "Usar URL": o <video> não toca, então vai o player oficial. Como a página web, só o
+ * telão carrega; no console, um aviso. O estado inicial vai no endereço (o player só aceita comandos depois de
+ * carregar) e os botões do console chegam por postMessage (enablejsapi).
+ */
+function YouTubeVideo({ id, scene, content, live, offset, mode }: With<'video'> & { id: string }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const p = live.playback
+  const synced = mode === 'screen' && p.sceneId === scene.id
+  // Só id e "Repetir" recarregam o player; tocar, pausar e voltar ao início vão por comando.
+  const src = useMemo(() => {
+    const q = new URLSearchParams({ enablejsapi: '1', rel: '0', playsinline: '1', origin: location.origin })
+    if (synced) {
+      q.set('start', String(Math.floor(playbackPosition(p, Date.now() + offset) / 1000)))
+      if (p.playing) q.set('autoplay', '1')
+    }
+    if (content.loop) {
+      q.set('loop', '1')
+      q.set('playlist', id) // o YouTube só repete um vídeo como lista dele mesmo
+    }
+    return `https://www.youtube.com/embed/${id}?${q}`
+  }, [id, content.loop])
+
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false // o primeiro estado já foi no endereço
+      return
+    }
+    if (!synced) return
+    const send = (func: string, args: unknown[] = []) =>
+      ref.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), 'https://www.youtube.com')
+    send('seekTo', [playbackPosition(p, Date.now() + offset) / 1000, true])
+    send(p.playing ? 'playVideo' : 'pauseVideo')
+    // Dependências nos campos de `playback`, não no objeto: cada snapshot traz um objeto novo.
+  }, [synced, p.playing, p.startedAt, p.positionMs])
+
+  if (mode !== 'screen') return <Placeholder icon={<FilmStripIcon size="1em" weight="bold" />} label="Vídeo do YouTube" />
+  return (
+    <iframe
+      ref={ref}
+      src={src}
+      title="Vídeo do YouTube"
+      className="absolute inset-0 size-full border-0"
+      sandbox="allow-scripts allow-same-origin allow-presentation"
+      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+      // O app manda "same-origin"; sem a origem de quem incorpora, o YouTube recusa tocar.
+      referrerPolicy="strict-origin-when-cross-origin"
+    />
+  )
+}
+
+function FileVideo({ scene, content, live, offset, mode }: With<'video'>) {
   const ref = useRef<HTMLVideoElement>(null)
   const [failed, setFailed] = useState(false)
   const p = live.playback

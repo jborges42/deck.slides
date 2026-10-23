@@ -1,5 +1,6 @@
 // Regras do console Ao vivo, sem React nem DOM: testadas em logic.test.ts (`pnpm test`).
 import { clock, plural } from '../../lib/format.ts'
+import { youtubeId } from '../../stage/lib.ts'
 import type { LiveCommand, LiveState, Scene, SceneContent, SceneType, TimerState } from '../../../shared/types.ts'
 
 /** Edição local de uma cena no inspetor. */
@@ -108,14 +109,7 @@ export function embedUrl(input: string): string | null {
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
   const host = u.hostname.replace(/^(www|m)\./, '')
-  const id =
-    host === 'youtu.be'
-      ? u.pathname.slice(1)
-      : host === 'youtube.com' && u.pathname === '/watch'
-        ? u.searchParams.get('v')
-        : host === 'youtube.com' && /^\/(shorts|live)\/[^/]+/.test(u.pathname)
-          ? u.pathname.split('/')[2]
-          : null
+  const id = youtubeId(u.href)
   if (id) return `https://www.youtube.com/embed/${id}`
   const p = u.pathname
   const vimeo = host === 'vimeo.com' && /^\/(\d+)/.exec(p)

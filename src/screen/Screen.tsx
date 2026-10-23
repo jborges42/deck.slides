@@ -1,7 +1,8 @@
 // Tela do evento (telão). /tela pareia o computador da projeção por código; /tela/:id abre a tela pela sessão
 // do console (projeção no próprio notebook). Antes de exibir, o portão "Iniciar exibição" pede tela cheia, libera
 // o som (o clique é o gesto que o navegador exige) e mantém a tela ligada. Sem conexão, o último quadro fica:
-// a plateia nunca vê erro, só um ponto discreto para a técnica depois de 10 s.
+// a plateia nunca vê erro, só um ponto discreto para a técnica depois de 10 s. Com versão nova publicada, a tela se
+// recarrega sozinha e volta direto à exibição.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { PlayIcon } from '@phosphor-icons/react/Play'
@@ -14,9 +15,25 @@ import type { ScreenSnapshot } from '../../shared/types.ts'
 
 type Pair = { paired: true; eventId: string } | { paired: false; code: string; expiresAt: number }
 
+// Marca da recarga por versão nova, lida uma vez por carga da página (useShow pula o portão).
+const RESUME = 'deck:tela-retomar'
+const resumed = take(RESUME)
+
+/** Lê e apaga a marca na sessão da aba. Armazenamento bloqueado: segue sem ela (a recarga para no portão). */
+function take(key: string): boolean {
+  try {
+    const on = sessionStorage.getItem(key) === '1'
+    sessionStorage.removeItem(key)
+    return on
+  } catch {
+    return false
+  }
+}
+
 export default function Screen() {
   const { id } = useParams()
   const show = useShow()
+  useReloadOnDeploy(show.started)
   const [paired, setPaired] = useState(false)
   const onPaired = useCallback(() => setPaired(true), [])
   const onLost = useCallback(() => setPaired(false), [])
@@ -26,9 +43,12 @@ export default function Screen() {
 
 type Show = ReturnType<typeof useShow>
 
-/** Portão de início e cuidados da projeção: tela cheia (F alterna), tela sempre ligada, cursor oculto após 2 s parado. */
+/**
+ * Portão de início e cuidados da projeção: tela cheia (F alterna), tela sempre ligada, cursor oculto após 2 s parado.
+ * Depois da recarga por versão nova, começa já exibindo; a tela cheia pede um gesto e volta no primeiro clique (ou F).
+ */
 function useShow() {
-  const [started, setStarted] = useState(false)
+  const [started, setStarted] = useState(resumed)
   const [idle, setIdle] = useState(false)
   const lock = useRef<WakeLockSentinel | null>(null)
 
@@ -57,12 +77,18 @@ function useShow() {
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
       else document.documentElement.requestFullscreen?.().catch(() => {})
     }
+    const full = () => document.documentElement.requestFullscreen?.().catch(() => {})
+    if (resumed) {
+      wake()
+      window.addEventListener('pointerdown', full, { once: true })
+    }
     move()
     window.addEventListener('pointermove', move)
     window.addEventListener('keydown', key)
     document.addEventListener('visibilitychange', wake)
     return () => {
       clearTimeout(timer)
+      window.removeEventListener('pointerdown', full)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('keydown', key)
       document.removeEventListener('visibilitychange', wake)
@@ -71,6 +97,35 @@ function useShow() {
   }, [started, wake])
 
   return { started, start, idle }
+}
+
+/**
+ * Versão nova publicada: a aba aberta antes dela segue com o código antigo e não mostra os recursos novos (o
+ * cronômetro sobre o conteúdo, por exemplo). A cada minuto compara o script principal do index.html com o desta
+ * página e, se mudou, recarrega. Exibindo, marca a recarga para voltar sem o portão.
+ */
+function useReloadOnDeploy(started: boolean) {
+  useEffect(() => {
+    const mine = document.querySelector('script[type="module"][src]')?.getAttribute('src')
+    if (!mine) return
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(location.pathname, { cache: 'no-store' })
+        const html = await r.text()
+        // Só um index.html de verdade com outro script: página de erro da rede ou da CDN não recarrega.
+        if (!r.ok || !html.includes('<script type="module"') || html.includes(`src="${mine}"`)) return
+        try {
+          if (started) sessionStorage.setItem(RESUME, '1')
+        } catch {
+          // armazenamento bloqueado: recarrega assim mesmo e para no portão
+        }
+        location.reload()
+      } catch {
+        // sem rede: tenta de novo no próximo minuto
+      }
+    }, 60_000)
+    return () => clearInterval(t)
+  }, [started])
 }
 
 // ---------- exibição ----------

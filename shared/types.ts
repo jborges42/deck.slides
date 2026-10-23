@@ -80,6 +80,7 @@ export interface LiveState {
   transition: 'cut' | 'fade' // transição usada no último corte
   takenAt: number // relógio do servidor do último corte
   overlays: { join: boolean; reactions: boolean }
+  joinPosition: 'top' | 'bottom' // faixa de entrada em cima (padrão: vista de todo o auditório) ou embaixo
   timer: TimerState
   playback: PlaybackState
   slides: Record<string, number> // slide atual de cada apresentação (id da cena -> índice); ausente = primeiro
@@ -255,7 +256,7 @@ export type LiveCommand =
   | { op: 'preview'; sceneId: string | null }
   | { op: 'take'; transition?: 'cut' | 'fade' }
   | { op: 'standby'; on: boolean }
-  | { op: 'overlays'; join?: boolean; reactions?: boolean }
+  | { op: 'overlays'; join?: boolean; reactions?: boolean; joinPosition?: LiveState['joinPosition'] }
   | { op: 'timer'; action: 'start' | 'pause' | 'reset' }
   | { op: 'timer'; action: 'add'; ms: number }
   // Limites e fim omitidos mantêm os do cronômetro anterior.
@@ -329,6 +330,7 @@ export function defaultLive(): LiveState {
     transition: 'fade',
     takenAt: 0,
     overlays: { join: false, reactions: true },
+    joinPosition: 'top',
     timer: {
       sceneId: null,
       mode: 'countdown',

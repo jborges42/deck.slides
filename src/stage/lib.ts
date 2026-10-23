@@ -58,6 +58,29 @@ export function addressParts(url: string): string[] {
   return [...rest.slice(0, cut).split(/(?=\.)/), rest.slice(cut)].filter(Boolean)
 }
 
+/**
+ * Id do vídeo num link do YouTube (watch, youtu.be, shorts, live ou embed); null se não for. Só letras, números,
+ * "_" e "-": o id entra num endereço montado pelo app.
+ */
+export function youtubeId(src: string): string | null {
+  let u: URL
+  try {
+    u = new URL(src)
+  } catch {
+    return null
+  }
+  const host = u.hostname.replace(/^(www|m)\./, '')
+  const id =
+    host === 'youtu.be'
+      ? u.pathname.slice(1)
+      : host === 'youtube.com' && u.pathname === '/watch'
+        ? u.searchParams.get('v')
+        : host === 'youtube.com' || host === 'youtube-nocookie.com'
+          ? /^\/(?:shorts|live|embed)\/([^/]+)/.exec(u.pathname)?.[1]
+          : null
+  return id && /^[\w-]+$/.test(id) ? id : null
+}
+
 /** PIN e códigos em duas metades: "482913" -> "482 913", "K7QX2M" -> "K7Q X2M". */
 export const group = (code: string) =>
   code.length >= 6 && code.length % 2 === 0 ? `${code.slice(0, code.length / 2)} ${code.slice(code.length / 2)}` : code

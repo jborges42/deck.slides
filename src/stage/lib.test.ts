@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { contrast, deriveTheme } from '../../shared/screen-theme.ts'
-import { addressParts, amberOn, group, questionOverlayTop, safeOf, timerFace, timerOverlayTop, type TimerSpec } from './lib.ts'
+import { addressParts, amberOn, group, questionOverlayTop, safeOf, timerFace, timerOverlayTop, youtubeId, type TimerSpec } from './lib.ts'
 
 const countdown: TimerSpec = { mode: 'countdown', durationMs: 600_000, warnMs: 120_000, criticalMs: 30_000, onEnd: 'overtime', endText: '' }
 
@@ -90,4 +90,27 @@ test('pergunta sobre o conteúdo: não invade a altura reservada ao cronômetro'
   assert.equal(questionOverlayTop(logo, safe + 96 + 40, { corner: 'top-left', label: '' }), plain + 96 + 24)
   // Área da cena já mais baixa que o cronômetro: vale a da cena.
   assert.equal(questionOverlayTop(look, 500, { corner: 'top-left', label: 'Ana' }), 500)
+})
+
+test('vídeo do YouTube: id de qualquer formato de link; outros endereços e ids estranhos não passam', () => {
+  for (const link of [
+    'https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=30',
+    'https://m.youtube.com/watch?v=aqz-KE-bpKQ',
+    'https://youtu.be/aqz-KE-bpKQ?si=abc',
+    'https://www.youtube.com/shorts/aqz-KE-bpKQ',
+    'https://www.youtube.com/live/aqz-KE-bpKQ?feature=share',
+    'https://www.youtube.com/embed/aqz-KE-bpKQ?start=10',
+    'https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ',
+  ])
+    assert.equal(youtubeId(link), 'aqz-KE-bpKQ', link)
+  for (const other of [
+    '/media/K7QX2M/abc.mp4',
+    'https://exemplo.com.br/video.mp4',
+    'https://www.youtube.com/@canal',
+    'https://www.youtube.com/watch',
+    'https://youtu.be/abc%2F..%2Fx',
+    'https://youtube.com.exemplo.com/watch?v=aqz-KE-bpKQ',
+    '',
+  ])
+    assert.equal(youtubeId(other), null, other)
 })

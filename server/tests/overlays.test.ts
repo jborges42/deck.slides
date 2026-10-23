@@ -54,7 +54,7 @@ describe('padrões', () => {
   })
 
   test('evento gravado antes dos campos novos lê os padrões e aceita os comandos novos', async () => {
-    const { timerOverlay: _t, timerCorner: _c, questionOverlay: _q, ...old } = defaultLive()
+    const { timerOverlay: _t, timerCorner: _c, questionOverlay: _q, joinPosition: _j, ...old } = defaultLive()
     const id = newCode()
     await run(
       'INSERT INTO events (id, name, pin, settings, theme, live, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',

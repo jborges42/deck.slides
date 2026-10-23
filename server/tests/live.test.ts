@@ -174,6 +174,28 @@ test('sobreposições: cada uma liga e desliga sem mexer na outra; o console abe
   }
 })
 
+test('faixa de entrada: em cima por padrão, vai para baixo e fica onde está quando o comando não diz', async () => {
+  const { id } = await setup()
+  const consoleStream = await mod.stream(`/api/events/${id}/stream`)
+  try {
+    const first = await consoleStream.next<ModeratorSnapshot>('state')
+    assert.equal(first.event.live.joinPosition, 'top')
+    const steps: [unknown, LiveState['joinPosition']][] = [
+      [{ op: 'overlays', joinPosition: 'bottom' }, 'bottom'],
+      [{ op: 'overlays', join: true }, 'bottom'],
+      [{ op: 'overlays', joinPosition: 'top' }, 'top'],
+    ]
+    for (const [cmd, expected] of steps) {
+      await ok(id, cmd)
+      const snap = await consoleStream.next<ModeratorSnapshot>('state')
+      assert.equal(snap.event.live.joinPosition, expected, JSON.stringify(cmd))
+    }
+    assert.deepEqual((await liveOf(id)).overlays, { join: true, reactions: true })
+  } finally {
+    consoleStream.close()
+  }
+})
+
 describe('cronômetro', () => {
   test('definir configura e zera; iniciar, pausar e retomar acumulam o tempo de relógio', async () => {
     const { id } = await setup()
@@ -521,6 +543,7 @@ describe('entrada e acesso', () => {
       { op: 'standby' },
       { op: 'standby', on: 'sim' },
       { op: 'overlays', join: 1 },
+      { op: 'overlays', joinPosition: 'left' },
       { op: 'preview' },
       { op: 'preview', sceneId: 42 },
       { op: 'playback', action: 'stop' },

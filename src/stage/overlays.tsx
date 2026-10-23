@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { renderSVG } from 'uqr'
 import { cx } from '../ui'
-import { TIMER_CARD, addressParts, card, group, safeOf, timerFace, timerOverlayTop, u, type TimerFace } from './lib.ts'
+import { TIMER_CARD, addressParts, card, group, safeOf, timerFace, u, type TimerFace } from './lib.ts'
 import { Crossfade, Ticking, useFit, type Box } from './scenes.tsx'
 import { REACTION, ReactionEmoji } from '../lib/reactions.tsx'
 import { REACTIONS, timerElapsed, type LiveState, type PublicQuestion, type ReactionKind, type Theme, type TimerState } from '../../shared/types.ts'
@@ -16,7 +16,7 @@ const QR = 300
 const PAD = 40
 const INVITE = 160 // altura das duas linhas do evento só com convidados
 
-/** Altura da faixa de entrada, medida da base do canvas (inclui a margem de segurança). */
+/** Altura da faixa de entrada, medida da borda do canvas em que ela fica (inclui a margem de segurança). */
 export const bandHeight = (theme: Theme, qr: boolean) => safeOf(theme) + PAD + (qr ? QR : INVITE)
 
 /**
@@ -51,18 +51,23 @@ export function Address({ url }: { url: string }) {
   )
 }
 
-/** Faixa inferior de ponta a ponta. QR escuro sobre ladrilho branco, endereço sem "https://", PIN 3 + 3. */
-export function JoinBand({ theme, joinUrl, pin, show }: { theme: Theme; joinUrl: string | null; pin: string; show: boolean }) {
+/**
+ * Faixa de ponta a ponta, em cima ou embaixo (a margem de segurança fica do lado da borda). QR escuro sobre
+ * ladrilho branco, endereço sem "https://", PIN 3 + 3.
+ */
+export function JoinBand(p: { theme: Theme; joinUrl: string | null; pin: string; show: boolean; at: LiveState['joinPosition'] }) {
+  const { theme, joinUrl, pin, show } = p
   const safe = safeOf(theme)
+  const top = p.at === 'top'
   return (
     <div
       aria-hidden={!show || undefined}
-      className="pointer-events-none absolute inset-x-0 bottom-0 bg-surface"
+      className={cx('pointer-events-none absolute inset-x-0 bg-surface', top ? 'top-0' : 'bottom-0')}
       style={{ height: u(bandHeight(theme, !!joinUrl)), opacity: show ? 1 : 0, transition: 'opacity 300ms linear' }}
     >
       <div
         className={cx('absolute flex items-center', theme.align === 'center' && 'justify-center')}
-        style={{ top: u(PAD), bottom: u(safe), left: u(safe), right: u(safe), gap: u(56) }}
+        style={{ top: u(top ? safe : PAD), bottom: u(top ? PAD : safe), left: u(safe), right: u(safe), gap: u(56) }}
       >
         {joinUrl && <QrTile value={joinUrl} size={QR} radius={Math.min(theme.radius, 24)} label="QR code do endereço de entrada" />}
         <div className="flex min-w-0 flex-col font-body" style={{ gap: u(12) }}>
@@ -247,6 +252,8 @@ interface TimerOverlayProps {
   offset: number
   theme: Theme
   corner: LiveState['timerCorner']
+  /** Distância do topo do canvas: `timerOverlayTop` ou, com a faixa de entrada em cima, logo abaixo dela. */
+  top: number
   /** Âmbar do aviso com contraste garantido sobre o cartão (`surface`), não sobre o fundo. */
   amber: string
 }
@@ -261,7 +268,7 @@ export function TimerOverlay({ timer, offset, ...rest }: TimerOverlayProps) {
   return view(timerElapsed(timer, Date.now() + offset))
 }
 
-function TimerCard({ face, label, theme, corner, amber }: Omit<TimerOverlayProps, 'timer' | 'offset'> & { face: TimerFace; label: string }) {
+function TimerCard({ face, label, theme, corner, top, amber }: Omit<TimerOverlayProps, 'timer' | 'offset'> & { face: TimerFace; label: string }) {
   const s = theme.scale
   const t = TIMER_CARD
   const right = corner === 'top-right'
@@ -269,7 +276,7 @@ function TimerCard({ face, label, theme, corner, amber }: Omit<TimerOverlayProps
     <div
       className={cx('pointer-events-none absolute flex flex-col bg-surface', right && 'items-end text-right')}
       style={{
-        top: u(timerOverlayTop(theme, corner)),
+        top: u(top),
         [right ? 'right' : 'left']: u(safeOf(theme)),
         borderRadius: u(theme.radius),
         padding: `${u(t.pad[0])} ${u(t.pad[1])}`,

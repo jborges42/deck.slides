@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import { CANVAS, eventPalette, fontVars, loadThemeFonts, tokenVars } from '../lib/theme.ts'
 import { BrandStrip, cx } from '../ui'
-import { BRAND, BRAND_FONT, BRAND_W, GAP, amberOn, questionOverlayTop, safeOf, u } from './lib.ts'
+import { BRAND, BRAND_FONT, BRAND_W, GAP, amberOn, questionOverlayTop, safeOf, timerOverlayTop, u } from './lib.ts'
 import { JoinBand, QuestionOverlay, Reactions, TimerOverlay, bandHeight } from './overlays.tsx'
 import { Crossfade, SceneView, type Box } from './scenes.tsx'
 import type { LiveState, PublicQuestion, ReactionKind, Scene, Theme } from '../../shared/types.ts'
@@ -31,7 +31,7 @@ export interface StageProps {
    * Cronômetro, vídeo e sobreposições. O cronômetro só vale para a cena se `timer.sceneId === scene.id`; com
    * `timerOverlay`, aparece sobre qualquer outra cena, no canto `timerCorner`.
    */
-  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'transition' | 'slides' | 'timerOverlay' | 'timerCorner'>
+  live: Pick<LiveState, 'timer' | 'playback' | 'overlays' | 'joinPosition' | 'transition' | 'slides' | 'timerOverlay' | 'timerCorner'>
   /** Pergunta sobre o conteúdo (use `overlayQuestion` de shared/types; na tela, `questionOverlay` do snapshot). */
   questionOverlay?: PublicQuestion | null
   /** Tela de espera ativa (tecla B). Só faz sentido no telão e no monitor No ar. */
@@ -147,11 +147,18 @@ export function Stage(props: StageProps) {
   // A cena de entrada já mostra o QR e o PIN. Com a pergunta sobre o conteúdo, a faixa espera ela sair: com o
   // cronômetro também ligado, sobrariam menos de 250 de altura para a pergunta.
   const join = !thumb && live.overlays.join && !black && shown?.type !== 'join' && !question
+  const joinTop = join && live.joinPosition === 'top'
+  const joinBottom = join && !joinTop
   const band = bandHeight(theme, !!props.joinUrl)
-  // Faixa da marca: na margem de segurança ou, com a faixa de entrada visível, logo acima dela.
-  const brand = join ? band + 24 : safeOf(theme)
-  // Com a faixa de entrada visível, o texto da cena termina acima dela e da marca (e o aviso de "não cabe" passa a valer).
-  const sceneBox = join ? { ...box, bottom: Math.max(box.bottom, brand + BRAND + GAP) } : box
+  // Faixa da marca: na margem de segurança ou, com a faixa de entrada visível embaixo, logo acima dela.
+  const brand = joinBottom ? band + 24 : safeOf(theme)
+  // Com a faixa de entrada visível, o texto da cena fica do outro lado dela (e o aviso de "não cabe" passa a valer):
+  // embaixo, termina acima dela e da marca; em cima, começa abaixo dela (o logo do tema em cima fica coberto).
+  const sceneBox = joinBottom
+    ? { ...box, bottom: Math.max(box.bottom, brand + BRAND + GAP) }
+    : joinTop
+      ? { ...box, top: Math.max(box.top, band + GAP), slidesTop: band + 24 }
+      : box
   useEffect(() => {
     if (!question) reportQuestion(false)
   }, [question, reportQuestion])
@@ -177,7 +184,7 @@ export function Stage(props: StageProps) {
     ? [scene?.id ?? 'none', scene && view(scene)]
     : shown
       ? [shown.id, view(shown)]
-      : ['standby', <BrandStandby theme={theme} name={props.eventName} bottom={brand + BRAND + GAP} />]
+      : ['standby', <BrandStandby theme={theme} name={props.eventName} top={joinTop ? band + GAP : safeOf(theme)} bottom={brand + BRAND + GAP} />]
 
   return (
     <div
@@ -224,7 +231,7 @@ export function Stage(props: StageProps) {
             report={reportQuestion}
           />
         )}
-        {!thumb && <JoinBand theme={theme} joinUrl={props.joinUrl} pin={props.pin} show={join} />}
+        {!thumb && <JoinBand theme={theme} joinUrl={props.joinUrl} pin={props.pin} show={join} at={live.joinPosition} />}
         {/* A pergunta sobre o conteúdo ocupa a base da tela: as reações esperam ela sair. */}
         {!thumb && live.overlays.reactions && shown && shown.type !== 'video' && !question && (
           <Reactions
@@ -232,10 +239,19 @@ export function Stage(props: StageProps) {
             totals={props.reactions}
             enabled={props.enabledReactions}
             sceneId={shown.id}
-            bottom={join ? brand + BRAND + 24 : box.bottom}
+            bottom={joinBottom ? brand + BRAND + 24 : box.bottom}
           />
         )}
-        {timerOn && <TimerOverlay timer={live.timer} offset={props.offset} theme={theme} corner={live.timerCorner} amber={cardAmber} />}
+        {timerOn && (
+          <TimerOverlay
+            timer={live.timer}
+            offset={props.offset}
+            theme={theme}
+            corner={live.timerCorner}
+            top={joinTop ? band + 24 : timerOverlayTop(theme, live.timerCorner)}
+            amber={cardAmber}
+          />
+        )}
         {/* Marca fixa em toda cena e na tela de espera; a tela de espera preta cobre. */}
         <BrandStrip
           stacked
@@ -300,14 +316,14 @@ function Chrome({ theme, box, show, ms }: { theme: Theme; box: Layout; show: boo
   )
 }
 
-/** Tela de espera da marca: logo e nome do evento, centralizados acima da faixa de entrada (quando ligada). */
-function BrandStandby({ theme, name, bottom }: { theme: Theme; name: string; bottom: number }) {
+/** Tela de espera da marca: logo e nome do evento, centralizados no espaço que a faixa de entrada (quando ligada) deixa. */
+function BrandStandby({ theme, name, top, bottom }: { theme: Theme; name: string; top: number; bottom: number }) {
   const s = theme.scale
   const safe = safeOf(theme)
   return (
     <div
       className="absolute flex flex-col items-center justify-center text-center"
-      style={{ top: u(safe), left: u(safe), right: u(safe), bottom: u(bottom), gap: u(48 * s) }}
+      style={{ top: u(top), left: u(safe), right: u(safe), bottom: u(bottom), gap: u(48 * s) }}
     >
       {theme.logo && (
         <img

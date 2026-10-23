@@ -31,32 +31,37 @@ async function deck(): Promise<Buffer> {
   return pdf
 }
 
-/** Console com uma apresentação vazia na prévia. */
-async function consoleWithSlides(onBeforeOpen?: (page: Page) => Promise<unknown>) {
+/** Console de um evento sem apresentação. `slides()` cria uma vazia e a põe na prévia, com o console já aberto. */
+async function openConsole(onBeforeOpen?: (page: Page) => Promise<unknown>) {
   const ctx = await env.browser.newContext({ baseURL: env.base, viewport: { width: 1440, height: 900 }, locale: 'pt-BR', storageState: session })
   const page = await ctx.newPage()
   const headers = { origin: env.base }
   const { id } = (await (await page.request.post('/api/events', { data: { name: 'Conexão Profissional' }, headers })).json()) as { id: string }
-  const scene = (await (await page.request.post(`/api/events/${id}/scenes`, { data: { type: 'slides', content: { slides: [] } }, headers })).json()) as { id: string }
-  await page.request.post(`/api/events/${id}/live`, { data: { op: 'preview', sceneId: scene.id }, headers })
+  const live = (cmd: object) => page.request.post(`/api/events/${id}/live`, { data: cmd, headers })
+  const slides = async () => {
+    const scene = (await (await page.request.post(`/api/events/${id}/scenes`, { data: { type: 'slides', content: { slides: [] } }, headers })).json()) as { id: string }
+    await live({ op: 'preview', sceneId: scene.id })
+    await page.getByRole('button', { name: 'Enviar apresentação' }).waitFor()
+  }
   await onBeforeOpen?.(page)
   await page.goto(`/eventos/${id}`)
-  await page.getByRole('button', { name: 'Enviar apresentação' }).waitFor()
-  const live = (cmd: object) => page.request.post(`/api/events/${id}/live`, { data: cmd, headers })
-  return { page, id, live }
+  await page.getByText('Nenhuma cena para editar').waitFor()
+  return { page, live, slides }
 }
 
 const send = async (page: Page) =>
   page.locator('input[type=file][accept^="application/pdf"]').setInputFiles({ name: 'Educação financeira.pdf', mimeType: 'application/pdf', buffer: await deck() })
 
 test('PDF enviado depois de um deploy: vira slides, vai ao ar e passa pelo teclado e pelos botões', async () => {
-  // Sem a correção, o pdf.js só seria pedido no envio: espera um pouco e segue para mostrar o sintoma real.
   let loaded: Promise<unknown> = Promise.resolve()
-  const { page, live } = await consoleWithSlides(async (p) => {
+  const { page, live, slides } = await openConsole(async (p) => {
     loaded = p.waitForResponse((r) => PDF_CHUNK.test(r.url()), { timeout: 10_000 }).catch(() => null)
   })
-  await loaded
-  await page.route(PDF_CHUNK, (route) => route.fulfill({ status: 404, body: 'Não encontrado.' })) // o deploy
+  assert.ok(await loaded, 'o pdf.js tem de carregar quando o console abre, não no envio')
+  // O deploy: nenhum .js da versão aberta existe mais (o worker do pdf.js, .mjs, tem nome fixo). A apresentação é
+  // criada, aberta no editor e recebe o PDF só depois.
+  await page.route(/\/assets\/[^/]+\.js$/, (route) => route.fulfill({ status: 404, body: 'Não encontrado.' }))
+  await slides()
   await send(page)
   await page.getByText('3 slides', { exact: true }).waitFor() // salvo: a linha do roteiro vem do servidor
   assert.ok((await page.getByText('Educação financeira', { exact: true }).count()) > 0) // a cena ganhou o nome do arquivo
@@ -78,17 +83,22 @@ test('PDF enviado depois de um deploy: vira slides, vai ao ar e passa pelo tecla
   await shown('Slide 2 de 3')
 })
 
-test('sem o leitor de PDF (fora do ar), o envio avisa em português e a apresentação continua vazia', async () => {
-  const { page } = await consoleWithSlides((p) => p.route(PDF_CHUNK, (route) => route.abort('internetdisconnected')))
+test('sem o leitor de PDF (fora do ar), o envio avisa em português; com a rede de volta, o envio seguinte funciona', async () => {
+  const { page, slides } = await openConsole((p) => p.route(PDF_CHUNK, (route) => route.abort('internetdisconnected')))
+  await slides()
   await send(page)
   await page.getByText('Não foi possível carregar o leitor de PDF. Recarregue a página e envie o arquivo de novo.').waitFor()
   assert.equal(await page.getByText('Apresentação sem slides').count(), 1)
   assert.equal(await page.getByRole('button', { name: 'Enviar apresentação' }).isEnabled(), true)
+
+  await page.unroute(PDF_CHUNK)
+  await send(page)
+  await page.getByText('3 slides', { exact: true }).waitFor()
 })
 
 /** Abre a página Mídia com o arquivo dela sumido do servidor; `deployed`: o index.html já aponta outra versão. */
 async function openMediaAfter(deployed: boolean) {
-  const { page } = await consoleWithSlides()
+  const { page } = await openConsole()
   await page.evaluate(() => Object.assign(globalThis, { antes: true })) // some se a página recarregar
   let gone = true // o arquivo da página Mídia volta junto com a conferência de versão: a recarga recebe o real
   await page.route(/\/assets\/Media-[\w-]+\.js$/, (route) => (gone ? route.fulfill({ status: 404, body: 'Não encontrado.' }) : route.fallback()))

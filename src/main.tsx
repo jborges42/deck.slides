@@ -25,6 +25,18 @@ const Screen = lazy(() => import('./screen/Screen.tsx'))
 // Administração geral, "Minha conta" e definição de senha por link (src/admin, src/account, src/moderator/auth)
 // entram nas rotas quando a API da equipe (server/security + rotas de /api/admin e /api/account) for ligada.
 
+// Depois de um deploy, os arquivos da versão anterior somem do servidor: uma página ainda não aberta não carregaria
+// (o console ficaria em branco). Com versão nova publicada, recarrega nela; sem rede, o erro segue. O telão tem a
+// própria atualização, que não o tira da exibição (src/screen/Screen.tsx).
+window.addEventListener('vite:preloadError', () => {
+  const mine = document.querySelector('script[type="module"][src]')?.getAttribute('src')
+  if (!mine || location.pathname.startsWith('/tela')) return
+  fetch('/', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.text() : ''))
+    .then((html) => html.includes('<script type="module"') && !html.includes(`src="${mine}"`) && location.reload())
+    .catch(() => {})
+})
+
 function NotFound() {
   return (
     <div className="flex min-h-dvh flex-col">

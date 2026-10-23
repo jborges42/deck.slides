@@ -1,5 +1,5 @@
 // Apresentação do palestrante -> imagens dos slides, no navegador do console. O telão só mostra imagens:
-// abre igual em qualquer computador, sem fontes nem programa do palestrante. O pdf.js carrega só aqui.
+// abre igual em qualquer computador, sem fontes nem programa do palestrante. O pdf.js carrega só no console.
 // PowerPoint, Keynote, Google Slides e Canva exportam PDF; animações e vídeos dentro dos slides não vêm junto.
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import { uploadMedia } from '../MediaPicker.tsx'
@@ -13,11 +13,23 @@ export const SLIDE_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,ima
 const byName = new Intl.Collator('pt-BR', { numeric: true }).compare
 const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
 
-async function pdfjs() {
-  const [lib, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')])
-  lib.GlobalWorkerOptions.workerSrc = worker.default
-  return lib
+// O pdf.js começa a carregar quando o console abre, não no envio: o arquivo dele muda de nome a cada deploy e o da
+// versão anterior some do servidor. Carregado só no envio, um console aberto antes de um deploy não o acharia mais.
+let loading: Promise<typeof import('pdfjs-dist')> | null = null
+function pdfjs() {
+  loading ??= Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]).then(
+    ([lib, worker]) => {
+      lib.GlobalWorkerOptions.workerSrc = worker.default
+      return lib
+    },
+    (e) => {
+      loading = null // sem rede agora: o envio tenta de novo
+      throw e
+    },
+  )
+  return loading
 }
+pdfjs().catch(() => {})
 
 async function render(page: PDFPageProxy): Promise<Blob> {
   const base = page.getViewport({ scale: 1 })
@@ -38,7 +50,11 @@ async function render(page: PDFPageProxy): Promise<Blob> {
  */
 export async function importSlides(eventId: string, files: File[], onProgress: (done: number, total: number) => void): Promise<string[] | null> {
   const sorted = [...files].sort((a, b) => byName(a.name, b.name))
-  const lib = sorted.some(isPdf) ? await pdfjs() : null
+  const lib = sorted.some(isPdf)
+    ? await pdfjs().catch(() => {
+        throw new Error('Não foi possível carregar o leitor de PDF. Recarregue a página e envie o arquivo de novo.')
+      })
+    : null
   const docs = new Map<File, PDFDocumentProxy>()
   try {
     for (const f of sorted.filter(isPdf)) docs.set(f, await lib!.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise)
@@ -65,7 +81,12 @@ export async function importSlides(eventId: string, files: File[], onProgress: (
       }
       const base = f.name.replace(/\.pdf$/i, '')
       for (let n = 1; n <= doc.numPages; n++) {
-        const blob = await render(await doc.getPage(n))
+        const blob = await doc
+          .getPage(n)
+          .then(render)
+          .catch(() => {
+            throw new Error(`Não foi possível converter o slide ${n}. Exporte a apresentação de novo em PDF e tente outra vez.`)
+          })
         if (!(await send(blob, `${base} - slide ${String(n).padStart(2, '0')}`))) return null
       }
     }
